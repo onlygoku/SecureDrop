@@ -1,0 +1,15 @@
+Windows Registry Editor Version 5.00
+
+; Installer template. Replace the executable path with the installed location,
+; or write equivalent keys with WiX/your installer framework.
+[HKEY_CURRENT_USER\Software\Classes\.sdrop]
+@="SecureDrop.Package"
+
+[HKEY_CURRENT_USER\Software\Classes\SecureDrop.Package]
+@="SecureDrop encrypted package"
+
+[HKEY_CURRENT_USER\Software\Classes\SecureDrop.Package\DefaultIcon]
+@="C:\\Program Files\\SecureDrop\\SecureDrop.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\SecureDrop.Package\shell\open\command]
+@="\"C:\\Program Files\\SecureDrop\\SecureDrop.exe\" \"%1\""
