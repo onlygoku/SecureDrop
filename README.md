@@ -54,9 +54,10 @@ AES-256-GCM
     │
     ▼
 .sdrop Package
+``` 
 
-## While Decrypting
-
+### While Decrypting
+```text
 .sdrop Package
     │
     ▼
@@ -73,3 +74,5 @@ AES-256-GCM
     │
     ▼
 Original File
+```
+Both workflows run directly in the user's browser. The current application does not require a SecureDrop backend to process the selected files.
