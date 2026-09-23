@@ -302,7 +302,7 @@ class SecureDrop(QMainWindow):
         title.setObjectName("AppTitle")
 
         subtitle = QLabel(
-            "Private file encryption. Nothing leaves your device."
+            "Private file encryption."
         )
         subtitle.setObjectName("AppSubtitle")
 
