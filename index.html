@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+
+  <meta name="theme-color" content="#f5f5f7">
+  <meta name="description" content="SecureDrop local-first file encryption">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+
+  <title>SecureDrop</title>
+</head>
+
+<body>
+
+  <main class="shell">
+
+    <header class="topbar">
+
+      <div>
+        <div class="brand">SecureDrop</div>
+
+        <div class="tagline">
+          Private file encryption. Nothing leaves your device.
+        </div>
+      </div>
+
+      <button
+        id="themeBtn"
+        class="icon-btn"
+        aria-label="Toggle appearance"
+      >
+        ☼
+      </button>
+
+    </header>
+
+
+    <section class="workspace">
+
+      <!-- Encrypt / Decrypt -->
+
+      <div
+        class="segmented"
+        role="tablist"
+        aria-label="Operation"
+      >
+
+        <button
+          id="encryptTab"
+          class="segment active"
+          role="tab"
+        >
+          Encrypt
+        </button>
+
+        <button
+          id="decryptTab"
+          class="segment"
+          role="tab"
+        >
+          Decrypt
+        </button>
+
+      </div>
+
+
+      <!-- Drop Zone -->
+
+      <section
+        id="dropZone"
+        class="drop-zone"
+        tabindex="0"
+      >
+
+        <div class="drop-icon">
+          ＋
+        </div>
+
+        <h1 id="dropTitle">
+          Drop files here
+        </h1>
+
+        <p id="dropSubtitle">
+          or click to choose files from your device
+        </p>
+
+        <button
+          id="chooseBtn"
+          class="quiet-btn"
+        >
+          Choose files
+        </button>
+
+        <input
+          id="fileInput"
+          type="file"
+          multiple
+          hidden
+        >
+
+      </section>
+
+
+      <!-- Selected Files -->
+
+      <section
+        id="files"
+        class="file-list"
+        aria-live="polite"
+      ></section>
+
+
+      <!-- Password -->
+
+      <section class="security-card">
+
+        <div class="section-label">
+          Password
+        </div>
+
+        <div class="password-row">
+
+          <input
+            id="password"
+            type="password"
+            autocomplete="new-password"
+            placeholder="Enter a strong password"
+          >
+
+          <button
+            id="showPassword"
+            class="show-btn"
+          >
+            Show
+          </button>
+
+        </div>
+
+        <div
+          id="strength"
+          class="strength"
+        ></div>
+
+        <input
+          id="confirmPassword"
+          type="password"
+          autocomplete="new-password"
+          placeholder="Confirm password"
+        >
+
+      </section>
+
+
+      <!-- Progress -->
+
+      <div
+        id="progressWrap"
+        class="progress-wrap hidden"
+      >
+
+        <div class="progress-track">
+
+          <div
+            id="progressBar"
+            class="progress-bar"
+          ></div>
+
+        </div>
+
+        <div id="progressText">
+          Preparing…
+        </div>
+
+      </div>
+
+
+      <!-- Actions -->
+
+      <footer class="action-row">
+
+        <div
+          id="status"
+          class="status"
+        >
+          No files selected
+        </div>
+
+        <div class="actions">
+
+          <button
+            id="clearBtn"
+            class="secondary-btn"
+          >
+            Clear
+          </button>
+
+          <button
+            id="runBtn"
+            class="primary-btn"
+          >
+            Encrypt
+          </button>
+
+        </div>
+
+      </footer>
+
+
+      <div class="footer-note">
+        AES-256-GCM · Argon2id · Local-only · No account
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <div
+    id="toast"
+    class="toast"
+    role="status"
+  ></div>
+
+
+  <script
+    type="module"
+    src="app.js"
+  ></script>
+
+</body>
+</html>

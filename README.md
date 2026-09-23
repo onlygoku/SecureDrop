@@ -1,33 +1,62 @@
-# SecureDrop
+# SecureDrop Web
 
-SecureDrop is a small Windows desktop utility for putting files and folders into encrypted `.sdrop` packages. It has no account, cloud service, or telemetry.
+A local-first browser implementation of SecureDrop.
 
 ## Run
 
-```powershell
-py -m pip install -r requirements.txt
-py app.py
-```
+Open CMD inside the SecureDrop-Web folder:
 
-## Security design
+    py -m http.server 8080
 
-- Encryption: AES-256-GCM
-- Password derivation: Argon2id (64 MiB memory, 3 iterations, 2 lanes)
-- Package contents: a ZIP archive encrypted as one authenticated payload
-- Passwords are never written to disk or retained after an operation.
+Then open:
 
-The format is versioned and documented in `docs/format.md`. This first version writes a temporary ZIP alongside the output while packaging; it is securely deleted when the operation finishes, but encryption is not suitable for data that must never temporarily exist unencrypted on disk.
+    http://localhost:8080
 
-## Build a Windows executable
+Do not open index.html directly with file:// if you want PWA/service-worker behavior.
 
-```powershell
-.\build.ps1
-```
+## Features
 
-For a production release, use a code-signing certificate and an installer (for example WiX) to register the `.sdrop` association. `installer-association.reg` documents the equivalent registry keys. The application accepts an `.sdrop` path as its first argument, which is the installer integration point.
+- Apple-inspired interface
+- Zinc typography
+- Encrypt / Decrypt
+- Drag and drop
+- AES-256-GCM
+- Argon2id
+- Local browser processing
+- No account
+- No backend
+- No file upload
+- Dark mode
+- PWA support
+- Responsive design
 
-## Test
+## Security
 
-```powershell
-py -m pytest
-```
+The browser derives a 256-bit encryption key using Argon2id.
+
+Parameters:
+
+- Memory: 64 MiB
+- Iterations: 3
+- Parallelism: 2
+- Salt: 128 bits
+- AES-GCM nonce: 96 bits
+
+Files are encrypted locally using the Web Crypto API.
+
+## Development note
+
+The browser implementation uses a versioned browser .sdrop format.
+
+It should not be assumed to be byte-compatible with the existing Python desktop SecureDrop format until the Python crypto serialization is explicitly ported.
+
+## Production
+
+Before production release:
+
+1. Bundle Argon2 locally instead of relying on the CDN.
+2. Serve the application over HTTPS.
+3. Add proper PWA icons.
+4. Add large-file streaming/chunking.
+5. Add folder packaging.
+6. Add automated cryptographic interoperability tests.

@@ -1,185 +1,1205 @@
 from __future__ import annotations
 
-import os
-import queue
 import sys
+import time
 import threading
-import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
 
-from securedrop.crypto import AuthenticationError, SecureDropError, decrypt, encrypt
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+    QObject,
+    QPropertyAnimation,
+    QEasingCurve,
+    QSize,
+)
+from PySide6.QtGui import (
+    QFont,
+    QColor,
+    QDragEnterEvent,
+    QDropEvent,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QFileDialog,
+    QFrame,
+    QProgressBar,
+    QGraphicsDropShadowEffect,
+    QStackedWidget,
+    QCheckBox,
+    QMessageBox,
+)
 
-try:
-    from tkinterdnd2 import DND_FILES, TkinterDnD
-    RootWindow = TkinterDnD.Tk
-except ImportError:  # The app remains usable when optional drag/drop integration is unavailable.
-    DND_FILES = None
-    RootWindow = tk.Tk
-
-APP_NAME = "SecureDrop"
+from securedrop.crypto import (
+    AuthenticationError,
+    SecureDropError,
+    encrypt,
+    decrypt,
+)
 
 
-class SecureDropApp(RootWindow):
+# ============================================================
+# Theme
+# ============================================================
+
+LIGHT = {
+    "background": "#F5F5F7",
+    "surface": "#FFFFFF",
+    "surface2": "#F2F2F7",
+    "text": "#1D1D1F",
+    "secondary": "#86868B",
+    "border": "#D2D2D7",
+    "accent": "#0071E3",
+    "accent_hover": "#0077ED",
+    "danger": "#FF3B30",
+    "success": "#34C759",
+}
+
+DARK = {
+    "background": "#000000",
+    "surface": "#1C1C1E",
+    "surface2": "#2C2C2E",
+    "text": "#F5F5F7",
+    "secondary": "#98989D",
+    "border": "#38383A",
+    "accent": "#0A84FF",
+    "accent_hover": "#409CFF",
+    "danger": "#FF453A",
+    "success": "#30D158",
+}
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+def human_size(size: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+
+    value = float(size)
+
+    for unit in units:
+        if value < 1024:
+            if unit == "B":
+                return f"{int(value)} B"
+            return f"{value:.1f} {unit}"
+
+        value /= 1024
+
+    return f"{value:.1f} PB"
+
+
+def path_size(path: Path) -> int:
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+
+    total = 0
+
+    try:
+        for item in path.rglob("*"):
+            try:
+                if item.is_file():
+                    total += item.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+    return total
+
+
+# ============================================================
+# Worker signals
+# ============================================================
+
+class WorkerSignals(QObject):
+    progress = Signal(int, int)
+    success = Signal(str)
+    error = Signal(str)
+
+
+# ============================================================
+# File Card
+# ============================================================
+
+class FileCard(QFrame):
+
+    remove_requested = Signal(object)
+
+    def __init__(self, path: Path, theme):
+        super().__init__()
+
+        self.path = path
+        self.theme = theme
+
+        self.setObjectName("FileCard")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(18, 14, 14, 14)
+        layout.setSpacing(14)
+
+        icon = QLabel("📁" if path.is_dir() else "📄")
+        icon.setFixedSize(40, 40)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        name_layout = QVBoxLayout()
+        name_layout.setSpacing(2)
+
+        name = QLabel(path.name)
+        name.setObjectName("FileName")
+
+        size = QLabel(
+            "Folder" if path.is_dir()
+            else human_size(path_size(path))
+        )
+        size.setObjectName("FileSize")
+
+        name_layout.addWidget(name)
+        name_layout.addWidget(size)
+
+        remove = QPushButton("×")
+        remove.setObjectName("RemoveButton")
+        remove.setFixedSize(32, 32)
+        remove.clicked.connect(
+            lambda: self.remove_requested.emit(self)
+        )
+
+        layout.addWidget(icon)
+        layout.addLayout(name_layout)
+        layout.addStretch()
+        layout.addWidget(remove)
+
+
+# ============================================================
+# Drop Zone
+# ============================================================
+
+class DropZone(QFrame):
+
+    files_dropped = Signal(list)
+    clicked = Signal()
+
     def __init__(self):
         super().__init__()
-        self.title(APP_NAME)
-        self.minsize(660, 570)
-        self.geometry("760x640")
+
+        self.setAcceptDrops(True)
+        self.setObjectName("DropZone")
+
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(8)
+
+        self.icon = QLabel("+")
+        self.icon.setObjectName("DropIcon")
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.title = QLabel("Drop files here")
+        self.title.setObjectName("DropTitle")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.subtitle = QLabel(
+            "or click to choose files from your computer"
+        )
+        self.subtitle.setObjectName("DropSubtitle")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(self.icon)
+        layout.addWidget(self.title)
+        layout.addWidget(self.subtitle)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            self.setProperty("dragging", True)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        self.setProperty("dragging", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def dropEvent(self, event: QDropEvent):
+
+        paths = []
+
+        for url in event.mimeData().urls():
+
+            if url.isLocalFile():
+                paths.append(Path(url.toLocalFile()))
+
+        if paths:
+            self.files_dropped.emit(paths)
+
+        self.setProperty("dragging", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+        event.acceptProposedAction()
+
+
+# ============================================================
+# Main Window
+# ============================================================
+
+class SecureDrop(QMainWindow):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.dark_mode = False
+        self.theme = LIGHT
+
         self.files: list[Path] = []
-        self.mode = tk.StringVar(value="encrypt")
-        self.status = tk.StringVar(value="No files selected.")
-        self.output = tk.StringVar()
-        self.show_password = tk.BooleanVar(value=False)
-        self.events: queue.Queue = queue.Queue()
-        self._configure_style()
-        self._menu()
-        self._build()
-        self.after(80, self._poll_events)
-        if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".sdrop"):
-            self.set_decrypt(Path(sys.argv[1]))
 
-    def _configure_style(self):
-        style = ttk.Style(self)
-        style.theme_use("vista" if "vista" in style.theme_names() else "clam")
-        style.configure("Title.TLabel", font=("Segoe UI", 12, "bold"))
-        style.configure("Small.TLabel", font=("Segoe UI", 9), foreground="#555555")
-        style.configure("Drop.TFrame", relief="solid", borderwidth=1)
-        style.configure("Drop.TLabel", font=("Segoe UI", 11))
-        style.configure("TButton", padding=(10, 5))
+        self.mode = "encrypt"
 
-    def _menu(self):
-        menu = tk.Menu(self)
-        file_menu = tk.Menu(menu, tearoff=False)
-        file_menu.add_command(label="Encrypt files", accelerator="Ctrl+E", command=self.choose_encrypt)
-        file_menu.add_command(label="Decrypt package", accelerator="Ctrl+D", command=self.choose_decrypt)
-        file_menu.add_separator(); file_menu.add_command(label="Exit", command=self.destroy)
-        tools = tk.Menu(menu, tearoff=False); tools.add_command(label="Settings", command=self.settings)
-        help_menu = tk.Menu(menu, tearoff=False); help_menu.add_command(label="Security information", command=self.security_info); help_menu.add_command(label="About SecureDrop", command=self.about)
-        menu.add_cascade(label="File", menu=file_menu); menu.add_cascade(label="Tools", menu=tools); menu.add_cascade(label="Help", menu=help_menu)
-        self.config(menu=menu); self.bind_all("<Control-e>", lambda _: self.choose_encrypt()); self.bind_all("<Control-d>", lambda _: self.choose_decrypt())
+        self.worker_thread = None
+        self.cancel_event = threading.Event()
 
-    def _build(self):
-        root = ttk.Frame(self, padding=18); root.grid(sticky="nsew")
-        self.columnconfigure(0, weight=1); self.rowconfigure(0, weight=1); root.columnconfigure(0, weight=1); root.rowconfigure(3, weight=1)
-        ttk.Label(root, text="File", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-        self.action_label = ttk.Label(root, text="Encrypt files")
-        self.action_label.grid(row=1, column=0, sticky="w", pady=(13, 6))
-        self.drop = ttk.Frame(root, style="Drop.TFrame", padding=26); self.drop.grid(row=2, column=0, sticky="ew")
-        self.drop.columnconfigure(0, weight=1)
-        self.drop_text = ttk.Label(self.drop, text="Drop files or folders here", style="Drop.TLabel", anchor="center")
-        self.drop_text.grid(row=0, column=0, sticky="ew")
-        self.drop_hint = ttk.Label(self.drop, text="Files and folders are supported. Click to select.", style="Small.TLabel", anchor="center")
-        self.drop_hint.grid(row=1, column=0, sticky="ew", pady=(5, 0))
-        for widget in (self.drop, self.drop_text, self.drop_hint): widget.bind("<Button-1>", lambda _: self.choose_encrypt() if self.mode.get() == "encrypt" else self.choose_decrypt())
-        if DND_FILES:
-            self.drop.drop_target_register(DND_FILES)
-            self.drop.dnd_bind("<<Drop>>", self.drop_files)
-        self.tree = ttk.Treeview(root, columns=("kind", "size"), show="tree headings", height=7)
-        self.tree.heading("#0", text="Selected files"); self.tree.heading("kind", text="Type"); self.tree.heading("size", text="Size")
-        self.tree.column("#0", width=410); self.tree.column("kind", width=100); self.tree.column("size", width=100, anchor="e")
-        self.tree.grid(row=3, column=0, sticky="nsew", pady=(14, 0))
-        ttk.Label(root, textvariable=self.status, style="Small.TLabel").grid(row=4, column=0, sticky="w", pady=(5, 14))
-        form = ttk.Frame(root); form.grid(row=5, column=0, sticky="ew"); form.columnconfigure(1, weight=1)
-        ttk.Label(form, text="Output").grid(row=0, column=0, sticky="w", padx=(0, 12))
-        ttk.Entry(form, textvariable=self.output).grid(row=0, column=1, sticky="ew")
-        ttk.Button(form, text="Browse", command=self.choose_output).grid(row=0, column=2, padx=(7, 0))
-        ttk.Label(form, text="Password").grid(row=1, column=0, sticky="w", pady=(11, 0))
-        self.password = ttk.Entry(form, show="•"); self.password.grid(row=1, column=1, sticky="ew", pady=(11, 0))
-        ttk.Checkbutton(form, text="Show", variable=self.show_password, command=self.toggle_password).grid(row=1, column=2, sticky="w", padx=(7, 0), pady=(11, 0))
-        self.confirm_label = ttk.Label(form, text="Confirm password"); self.confirm_label.grid(row=2, column=0, sticky="w", pady=(8, 0))
-        self.confirm = ttk.Entry(form, show="•"); self.confirm.grid(row=2, column=1, sticky="ew", pady=(8, 0))
-        self.detail = ttk.Label(root, text="Encryption: AES-256-GCM    Password derivation: Argon2id    Local operation only.", style="Small.TLabel")
-        self.detail.grid(row=6, column=0, sticky="w", pady=(14, 7))
-        self.progress = ttk.Progressbar(root, mode="determinate"); self.progress.grid(row=7, column=0, sticky="ew")
-        bottom = ttk.Frame(root); bottom.grid(row=8, column=0, sticky="ew", pady=(10, 0)); bottom.columnconfigure(0, weight=1)
-        self.progress_text = ttk.Label(bottom, text="", style="Small.TLabel"); self.progress_text.grid(row=0, column=0, sticky="w")
-        self.run_button = ttk.Button(bottom, text="Encrypt", command=self.run); self.run_button.grid(row=0, column=1)
-        ttk.Separator(root).grid(row=9, column=0, sticky="ew", pady=(16, 8))
-        ttk.Label(root, text="SecureDrop 0.1.0    Local encryption. No cloud. No account.", style="Small.TLabel").grid(row=10, column=0, sticky="w")
+        self.setWindowTitle("SecureDrop")
+        self.setMinimumSize(760, 700)
+        self.resize(900, 780)
+
+        self.build_ui()
+        self.apply_theme()
+
+    # --------------------------------------------------------
+    # UI
+    # --------------------------------------------------------
+
+    def build_ui(self):
+
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        root = QVBoxLayout(central)
+        root.setContentsMargins(42, 36, 42, 30)
+        root.setSpacing(0)
+
+        # Header
+        header = QHBoxLayout()
+
+        title_layout = QVBoxLayout()
+        title_layout.setSpacing(4)
+
+        title = QLabel("SecureDrop")
+        title.setObjectName("AppTitle")
+
+        subtitle = QLabel(
+            "Private file encryption. Nothing leaves your device."
+        )
+        subtitle.setObjectName("AppSubtitle")
+
+        title_layout.addWidget(title)
+        title_layout.addWidget(subtitle)
+
+        header.addLayout(title_layout)
+        header.addStretch()
+
+        self.theme_button = QPushButton("☼")
+        self.theme_button.setObjectName("IconButton")
+        self.theme_button.setFixedSize(42, 42)
+        self.theme_button.clicked.connect(self.toggle_theme)
+
+        header.addWidget(self.theme_button)
+
+        root.addLayout(header)
+
+        root.addSpacing(30)
+
+        # Segmented control
+        segment = QHBoxLayout()
+        segment.setSpacing(4)
+
+        self.encrypt_button = QPushButton("Encrypt")
+        self.decrypt_button = QPushButton("Decrypt")
+
+        self.encrypt_button.setCheckable(True)
+        self.decrypt_button.setCheckable(True)
+
+        self.encrypt_button.setChecked(True)
+
+        self.encrypt_button.clicked.connect(
+            lambda: self.change_mode("encrypt")
+        )
+
+        self.decrypt_button.clicked.connect(
+            lambda: self.change_mode("decrypt")
+        )
+
+        segment.addWidget(self.encrypt_button)
+        segment.addWidget(self.decrypt_button)
+
+        segment_frame = QFrame()
+        segment_frame.setObjectName("SegmentFrame")
+        segment_frame.setLayout(segment)
+
+        root.addWidget(segment_frame, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        root.addSpacing(24)
+
+        # Drop zone
+        self.drop_zone = DropZone()
+
+        self.drop_zone.clicked.connect(
+            self.choose_files
+        )
+
+        self.drop_zone.files_dropped.connect(
+            self.add_files
+        )
+
+        root.addWidget(self.drop_zone)
+
+        root.addSpacing(20)
+
+        # Files container
+        self.files_container = QFrame()
+        self.files_container.setObjectName("FilesContainer")
+
+        self.files_layout = QVBoxLayout(
+            self.files_container
+        )
+
+        self.files_layout.setContentsMargins(
+            10, 10, 10, 10
+        )
+
+        self.files_layout.setSpacing(8)
+
+        root.addWidget(self.files_container)
+
+        # Password section
+        root.addSpacing(24)
+
+        password_title = QLabel("Password")
+        password_title.setObjectName("SectionTitle")
+
+        root.addWidget(password_title)
+
+        root.addSpacing(8)
+
+        password_row = QHBoxLayout()
+        password_row.setSpacing(8)
+
+        self.password = QLineEdit()
+        self.password.setPlaceholderText(
+            "Enter a strong password"
+        )
+        self.password.setEchoMode(
+            QLineEdit.EchoMode.Password
+        )
+
+        self.show_password = QCheckBox("Show")
+        self.show_password.stateChanged.connect(
+            self.toggle_password
+        )
+
+        password_row.addWidget(self.password)
+        password_row.addWidget(self.show_password)
+
+        root.addLayout(password_row)
+
+        self.strength = QLabel("")
+        self.strength.setObjectName("PasswordStrength")
+
+        root.addWidget(self.strength)
+
+        self.password.textChanged.connect(
+            self.update_strength
+        )
+
+        # Confirm password
+        self.confirm = QLineEdit()
+        self.confirm.setPlaceholderText(
+            "Confirm password"
+        )
+        self.confirm.setEchoMode(
+            QLineEdit.EchoMode.Password
+        )
+
+        root.addSpacing(10)
+
+        root.addWidget(self.confirm)
+
+        # Progress
+        root.addSpacing(20)
+
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(5)
+        self.progress.hide()
+
+        root.addWidget(self.progress)
+
+        self.progress_text = QLabel("")
+        self.progress_text.setObjectName("ProgressText")
+        self.progress_text.hide()
+
+        root.addWidget(self.progress_text)
+
+        # Bottom bar
+        root.addSpacing(20)
+
+        bottom = QHBoxLayout()
+
+        self.status = QLabel(
+            "No files selected"
+        )
+        self.status.setObjectName("Status")
+
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.setObjectName("SecondaryButton")
+        self.clear_button.clicked.connect(
+            self.clear_files
+        )
+
+        self.run_button = QPushButton("Encrypt")
+        self.run_button.setObjectName("PrimaryButton")
+        self.run_button.clicked.connect(
+            self.run_operation
+        )
+
+        bottom.addWidget(self.status)
+        bottom.addStretch()
+        bottom.addWidget(self.clear_button)
+        bottom.addWidget(self.run_button)
+
+        root.addLayout(bottom)
+
+        # Footer
+        root.addSpacing(22)
+
+        footer = QLabel(
+            "AES-256-GCM  •  Argon2id  •  Local-only  •  No account"
+        )
+        footer.setObjectName("Footer")
+
+        root.addWidget(
+            footer,
+            alignment=Qt.AlignmentFlag.AlignCenter
+        )
+
+    # --------------------------------------------------------
+    # Theme
+    # --------------------------------------------------------
+
+    def apply_theme(self):
+
+        t = self.theme
+
+        self.setStyleSheet(f"""
+
+        QWidget {{
+            background: {t["background"]};
+            color: {t["text"]};
+            font-family: "Zinc";
+        }}
+
+        QLabel#AppTitle {{
+            font-size: 32px;
+            font-weight: 700;
+            color: {t["text"]};
+        }}
+
+        QLabel#AppSubtitle {{
+            font-size: 14px;
+            color: {t["secondary"]};
+        }}
+
+        QLabel#SectionTitle {{
+            font-size: 15px;
+            font-weight: 600;
+        }}
+
+        QLabel#Status,
+        QLabel#ProgressText,
+        QLabel#Footer {{
+            color: {t["secondary"]};
+            font-size: 12px;
+        }}
+
+        QFrame#SegmentFrame {{
+            background: {t["surface2"]};
+            border-radius: 10px;
+            padding: 3px;
+        }}
+
+        QFrame#SegmentFrame QPushButton {{
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 24px;
+            color: {t["secondary"]};
+            font-size: 13px;
+            font-weight: 600;
+        }}
+
+        QFrame#SegmentFrame QPushButton:checked {{
+            background: {t["surface"]};
+            color: {t["text"]};
+        }}
+
+        QFrame#DropZone {{
+            background: {t["surface"]};
+            border: 1px solid {t["border"]};
+            border-radius: 18px;
+            min-height: 180px;
+        }}
+
+        QFrame#DropZone[dragging="true"] {{
+            border: 2px solid {t["accent"]};
+            background: {t["surface2"]};
+        }}
+
+        QLabel#DropIcon {{
+            font-size: 36px;
+            color: {t["accent"]};
+        }}
+
+        QLabel#DropTitle {{
+            font-size: 17px;
+            font-weight: 600;
+        }}
+
+        QLabel#DropSubtitle {{
+            font-size: 13px;
+            color: {t["secondary"]};
+        }}
+
+        QFrame#FilesContainer {{
+            background: transparent;
+        }}
+
+        QFrame#FileCard {{
+            background: {t["surface"]};
+            border: 1px solid {t["border"]};
+            border-radius: 13px;
+        }}
+
+        QLabel#FileName {{
+            font-size: 13px;
+            font-weight: 600;
+        }}
+
+        QLabel#FileSize {{
+            font-size: 12px;
+            color: {t["secondary"]};
+        }}
+
+        QPushButton#RemoveButton {{
+            background: {t["surface2"]};
+            border: none;
+            border-radius: 16px;
+            font-size: 18px;
+            color: {t["secondary"]};
+        }}
+
+        QPushButton#RemoveButton:hover {{
+            color: {t["danger"]};
+        }}
+
+        QLineEdit {{
+            background: {t["surface"]};
+            border: 1px solid {t["border"]};
+            border-radius: 11px;
+            padding: 12px 14px;
+            font-size: 14px;
+            color: {t["text"]};
+        }}
+
+        QLineEdit:focus {{
+            border: 2px solid {t["accent"]};
+        }}
+
+        QCheckBox {{
+            color: {t["secondary"]};
+            font-size: 13px;
+        }}
+
+        QLabel#PasswordStrength {{
+            font-size: 12px;
+            color: {t["secondary"]};
+            padding-top: 4px;
+        }}
+
+        QPushButton#PrimaryButton {{
+            background: {t["text"]};
+            color: {t["background"]};
+            border: none;
+            border-radius: 11px;
+            padding: 12px 26px;
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 110px;
+        }}
+
+        QPushButton#PrimaryButton:hover {{
+            opacity: 0.85;
+        }}
+
+        QPushButton#PrimaryButton:disabled {{
+            background: {t["border"]};
+            color: {t["secondary"]};
+        }}
+
+        QPushButton#SecondaryButton {{
+            background: {t["surface2"]};
+            color: {t["text"]};
+            border: none;
+            border-radius: 11px;
+            padding: 12px 20px;
+        }}
+
+        QPushButton#IconButton {{
+            background: {t["surface"]};
+            border: 1px solid {t["border"]};
+            border-radius: 21px;
+            font-size: 18px;
+        }}
+
+        QProgressBar {{
+            background: {t["surface2"]};
+            border: none;
+            border-radius: 3px;
+        }}
+
+        QProgressBar::chunk {{
+            background: {t["accent"]};
+            border-radius: 3px;
+        }}
+
+        """)
+
+    # --------------------------------------------------------
+    # Theme toggle
+    # --------------------------------------------------------
+
+    def toggle_theme(self):
+
+        self.dark_mode = not self.dark_mode
+
+        self.theme = DARK if self.dark_mode else LIGHT
+
+        self.theme_button.setText(
+            "☾" if self.dark_mode else "☼"
+        )
+
+        self.apply_theme()
+
+    # --------------------------------------------------------
+    # Mode
+    # --------------------------------------------------------
+
+    def change_mode(self, mode):
+
+        self.mode = mode
+
+        self.encrypt_button.setChecked(
+            mode == "encrypt"
+        )
+
+        self.decrypt_button.setChecked(
+            mode == "decrypt"
+        )
+
+        self.files.clear()
+
+        self.refresh_files()
+
+        if mode == "encrypt":
+
+            self.run_button.setText("Encrypt")
+
+            self.confirm.show()
+
+            self.drop_zone.title.setText(
+                "Drop files here"
+            )
+
+            self.drop_zone.subtitle.setText(
+                "or click to choose files from your computer"
+            )
+
+        else:
+
+            self.run_button.setText("Decrypt")
+
+            self.confirm.hide()
+
+            self.drop_zone.title.setText(
+                "Drop a .sdrop package here"
+            )
+
+            self.drop_zone.subtitle.setText(
+                "or click to choose an encrypted package"
+            )
+
+    # --------------------------------------------------------
+    # File selection
+    # --------------------------------------------------------
+
+    def choose_files(self):
+
+        if self.mode == "encrypt":
+
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                "Choose files"
+            )
+
+            if files:
+                self.add_files(
+                    [Path(x) for x in files]
+                )
+
+        else:
+
+            file, _ = QFileDialog.getOpenFileName(
+                self,
+                "Open SecureDrop package",
+                "",
+                "SecureDrop Package (*.sdrop)"
+            )
+
+            if file:
+                self.add_files(
+                    [Path(file)]
+                )
+
+    def add_files(self, paths):
+
+        if self.mode == "decrypt":
+
+            packages = [
+                p for p in paths
+                if p.suffix.lower() == ".sdrop"
+            ]
+
+            if packages:
+                self.files = [packages[0]]
+
+        else:
+
+            self.files.extend(paths)
+
+        self.refresh_files()
+
+    def refresh_files(self):
+
+        while self.files_layout.count():
+
+            item = self.files_layout.takeAt(0)
+
+            widget = item.widget()
+
+            if widget:
+                widget.deleteLater()
+
+        total = 0
+
+        for path in self.files:
+
+            total += path_size(path)
+
+            card = FileCard(
+                path,
+                self.theme
+            )
+
+            card.remove_requested.connect(
+                self.remove_card
+            )
+
+            self.files_layout.addWidget(card)
+
+        if self.files:
+
+            self.status.setText(
+                f"{len(self.files)} "
+                f"{'item' if len(self.files) == 1 else 'items'}"
+                f"  •  {human_size(total)}"
+            )
+
+        else:
+
+            self.status.setText(
+                "No files selected"
+            )
+
+    def remove_card(self, card):
+
+        if card.path in self.files:
+
+            self.files.remove(card.path)
+
+        self.refresh_files()
+
+    def clear_files(self):
+
+        self.files.clear()
+
+        self.refresh_files()
+
+    # --------------------------------------------------------
+    # Password
+    # --------------------------------------------------------
 
     def toggle_password(self):
-        char = "" if self.show_password.get() else "•"; self.password.configure(show=char); self.confirm.configure(show=char)
 
-    def choose_encrypt(self):
-        chosen = filedialog.askopenfilenames(title="Select files to encrypt")
-        if chosen: self.set_encrypt([Path(item) for item in chosen])
+        visible = (
+            self.show_password.isChecked()
+        )
 
-    def drop_files(self, event):
-        paths = [Path(item) for item in self.tk.splitlist(event.data)]
-        if self.mode.get() == "decrypt":
-            packages = [item for item in paths if item.suffix.lower() == ".sdrop"]
-            if packages: self.set_decrypt(packages[0])
-        elif paths:
-            self.set_encrypt(paths)
+        mode = (
+            QLineEdit.EchoMode.Normal
+            if visible
+            else QLineEdit.EchoMode.Password
+        )
 
-    def choose_decrypt(self):
-        chosen = filedialog.askopenfilename(title="Open SecureDrop package", filetypes=[("SecureDrop packages", "*.sdrop"), ("All files", "*.*")])
-        if chosen: self.set_decrypt(Path(chosen))
+        self.password.setEchoMode(mode)
+        self.confirm.setEchoMode(mode)
 
-    def set_encrypt(self, paths: list[Path]):
-        self.mode.set("encrypt"); self.files = paths; self.action_label.config(text="Encrypt files"); self.drop_text.config(text="Drop files or folders here"); self.drop_hint.config(text="Files and folders are supported. Click to select.")
-        self.confirm_label.grid(); self.confirm.grid(); self.run_button.config(text="Encrypt"); self.output.set(str(paths[0].with_suffix(".sdrop")) if len(paths) == 1 else str(Path.home() / "Documents" / "securedrop.sdrop")); self.populate()
+    def update_strength(self, password):
 
-    def set_decrypt(self, package: Path):
-        self.mode.set("decrypt"); self.files = [package]; self.action_label.config(text="Decrypt package"); self.drop_text.config(text="Drop a .sdrop package here"); self.drop_hint.config(text="Or click to choose a package.")
-        self.confirm_label.grid_remove(); self.confirm.grid_remove(); self.run_button.config(text="Decrypt"); self.output.set(str(package.with_suffix(""))); self.populate()
+        length = len(password)
 
-    def populate(self):
-        self.tree.delete(*self.tree.get_children()); total = 0
-        for path in self.files:
-            size = self.folder_size(path) if path.is_dir() else path.stat().st_size
-            total += size; self.tree.insert("", "end", text=path.name, values=("Folder" if path.is_dir() else "File", self.human_size(size)))
-        self.status.set(f"{len(self.files)} item{'s' if len(self.files) != 1 else ''} selected    {self.human_size(total)}")
+        if not password:
 
-    @staticmethod
-    def folder_size(path: Path) -> int:
-        return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
-    @staticmethod
-    def human_size(size: int) -> str:
-        for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1024 or unit == "TB": return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
-            size /= 1024
+            self.strength.setText("")
 
-    def choose_output(self):
-        if self.mode.get() == "encrypt":
-            path = filedialog.asksaveasfilename(title="Save encrypted package", defaultextension=".sdrop", filetypes=[("SecureDrop packages", "*.sdrop")])
-        else: path = filedialog.askdirectory(title="Choose restore destination")
-        if path: self.output.set(path)
+        elif length < 8:
 
-    def run(self):
-        if not self.files: return messagebox.showwarning(APP_NAME, "Select at least one file or package.")
-        if not self.output.get().strip(): return messagebox.showwarning(APP_NAME, "Choose an output location.")
-        password = self.password.get()
-        if self.mode.get() == "encrypt" and password != self.confirm.get(): return messagebox.showwarning(APP_NAME, "The passwords do not match.")
-        self.run_button.config(state="disabled"); self.progress["value"] = 0; self.progress_text.config(text="Preparing operation…")
-        threading.Thread(target=self._work, args=(password,), daemon=True).start()
+            self.strength.setText(
+                "Weak · use at least 8 characters"
+            )
 
-    def _work(self, password: str):
-        def report(done, total): self.events.put(("progress", done, total))
-        try:
-            result = encrypt(self.files, self.output.get(), password, report) if self.mode.get() == "encrypt" else decrypt(self.files[0], self.output.get(), password, report)
-            self.events.put(("success", result))
-        except (SecureDropError, AuthenticationError) as error: self.events.put(("error", str(error)))
-        except Exception as error: self.events.put(("error", f"Unexpected error: {error}"))
+        elif length < 12:
 
-    def _poll_events(self):
-        try:
-            while True:
-                event = self.events.get_nowait()
-                if event[0] == "progress":
-                    done, total = event[1:]; self.progress["value"] = (done / total * 100) if total else 0; self.progress_text.config(text=f"{self.human_size(done)} / {self.human_size(total)}")
-                elif event[0] == "success":
-                    self.run_button.config(state="normal"); self.progress["value"] = 100; self.progress_text.config(text="Operation completed."); messagebox.showinfo(APP_NAME, f"{'Encryption' if self.mode.get() == 'encrypt' else 'Decryption'} completed.\n\nOutput:\n{event[1]}")
+            self.strength.setText(
+                "Okay · a longer passphrase is better"
+            )
+
+        else:
+
+            self.strength.setText(
+                "Strong"
+            )
+
+    # --------------------------------------------------------
+    # Operation
+    # --------------------------------------------------------
+
+    def run_operation(self):
+
+        if not self.files:
+
+            self.warning(
+                "Choose at least one file."
+            )
+
+            return
+
+        password = self.password.text()
+
+        if not password:
+
+            self.warning(
+                "Enter a password."
+            )
+
+            return
+
+        if self.mode == "encrypt":
+
+            if password != self.confirm.text():
+
+                self.warning(
+                    "The passwords do not match."
+                )
+
+                return
+
+        # Output
+        if self.mode == "encrypt":
+
+            source = self.files[0]
+
+            output, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save encrypted package",
+                str(
+                    source.with_suffix(".sdrop")
+                ),
+                "SecureDrop Package (*.sdrop)"
+            )
+
+            if not output:
+                return
+
+        else:
+
+            output = QFileDialog.getExistingDirectory(
+                self,
+                "Choose restore destination"
+            )
+
+            if not output:
+                return
+
+        self.start_operation(
+            password,
+            output
+        )
+
+    def start_operation(
+        self,
+        password,
+        output
+    ):
+
+        self.cancel_event.clear()
+
+        self.run_button.setDisabled(True)
+        self.clear_button.setDisabled(True)
+
+        self.progress.setValue(0)
+        self.progress.show()
+
+        self.progress_text.setText(
+            "Preparing..."
+        )
+
+        self.progress_text.show()
+
+        signals = WorkerSignals()
+
+        signals.progress.connect(
+            self.update_progress
+        )
+
+        signals.success.connect(
+            self.operation_success
+        )
+
+        signals.error.connect(
+            self.operation_error
+        )
+
+        def worker():
+
+            try:
+
+                def report(done, total):
+
+                    if self.cancel_event.is_set():
+
+                        raise SecureDropError(
+                            "Operation cancelled."
+                        )
+
+                    signals.progress.emit(
+                        done,
+                        total
+                    )
+
+                if self.mode == "encrypt":
+
+                    result = encrypt(
+                        self.files,
+                        output,
+                        password,
+                        report
+                    )
+
                 else:
-                    self.run_button.config(state="normal"); self.progress_text.config(text="Operation failed."); messagebox.showerror(APP_NAME, f"Operation failed.\n\n{event[1]}")
-        except queue.Empty: pass
-        self.after(80, self._poll_events)
 
-    def settings(self): messagebox.showinfo("Settings", "Settings are intentionally minimal in version 0.1.0.\n\nOutput locations are chosen per operation.")
-    def security_info(self): messagebox.showinfo("Security information", "Packages use AES-256-GCM authenticated encryption.\nPasswords are derived with Argon2id.\n\nSecureDrop runs locally and does not transmit files or passwords.")
-    def about(self): messagebox.showinfo("About SecureDrop", "SecureDrop\nLocal encrypted file packaging utility.\n\nVersion 0.1.0\nAES-256-GCM\nArgon2id\n\nNo account. No cloud. No telemetry.")
+                    result = decrypt(
+                        self.files[0],
+                        output,
+                        password,
+                        report
+                    )
+
+                signals.success.emit(
+                    str(result)
+                )
+
+            except (
+                SecureDropError,
+                AuthenticationError
+            ) as error:
+
+                signals.error.emit(
+                    str(error)
+                )
+
+            except Exception as error:
+
+                signals.error.emit(
+                    str(error)
+                )
+
+        self.worker_thread = threading.Thread(
+            target=worker,
+            daemon=True
+        )
+
+        self.worker_thread.start()
+
+    # --------------------------------------------------------
+    # Progress
+    # --------------------------------------------------------
+
+    def update_progress(
+        self,
+        done,
+        total
+    ):
+
+        percent = (
+            int(done / total * 100)
+            if total
+            else 0
+        )
+
+        self.progress.setValue(percent)
+
+        self.progress_text.setText(
+            f"{human_size(done)} / "
+            f"{human_size(total)}  ·  "
+            f"{percent}%"
+        )
+
+    # --------------------------------------------------------
+    # Success
+    # --------------------------------------------------------
+
+    def operation_success(self, result):
+
+        self.finish_operation()
+
+        self.progress.setValue(100)
+
+        self.progress_text.setText(
+            "✓ Operation completed"
+        )
+
+        self.show_success(result)
+
+    def show_success(self, result):
+
+        box = QMessageBox(self)
+
+        box.setWindowTitle(
+            "SecureDrop"
+        )
+
+        box.setText(
+            "Your files are secure."
+        )
+
+        box.setInformativeText(
+            f"Output:\n{result}"
+        )
+
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Ok
+        )
+
+        box.exec()
+
+    # --------------------------------------------------------
+    # Error
+    # --------------------------------------------------------
+
+    def operation_error(self, error):
+
+        self.finish_operation()
+
+        self.progress.setValue(0)
+
+        self.progress_text.setText(
+            "Operation failed"
+        )
+
+        self.warning(error)
+
+    def finish_operation(self):
+
+        self.run_button.setDisabled(False)
+        self.clear_button.setDisabled(False)
+
+    # --------------------------------------------------------
+    # Dialog
+    # --------------------------------------------------------
+
+    def warning(self, text):
+
+        box = QMessageBox(self)
+
+        box.setWindowTitle(
+            "SecureDrop"
+        )
+
+        box.setIcon(
+            QMessageBox.Icon.Warning
+        )
+
+        box.setText(text)
+
+        box.exec()
+
+
+# ============================================================
+# Application
+# ============================================================
+
+def main():
+
+    app = QApplication(sys.argv)
+
+    app.setApplicationName(
+        "SecureDrop"
+    )
+
+    app.setApplicationDisplayName(
+        "SecureDrop"
+    )
+
+    app.setStyle("Fusion")
+
+    font = QFont("Zinc")
+    font.setHintingPreference(
+        QFont.HintingPreference.PreferNoHinting
+    )
+
+    app.setFont(font)
+
+    window = SecureDrop()
+
+    window.show()
+
+    sys.exit(
+        app.exec()
+    )
 
 
 if __name__ == "__main__":
-    SecureDropApp().mainloop()
+    main()
