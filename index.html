@@ -1,235 +1,258 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="icon" href="data:,">
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <meta name="theme-color" content="#f5f5f7">
-  <meta name="description" content="SecureDrop local-first file encryption">
+    <title>SecureDrop</title>
 
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
-
-  <title>SecureDrop</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
 </head>
 
 <body>
 
-  <main class="shell">
+<div class="app">
 
-    <header class="topbar">
+    <!-- Header -->
+    <header class="header">
 
-      <div>
-        <div class="brand">SecureDrop</div>
-
-        <div class="tagline">
-          Private file encryption. Nothing leaves your device.
+        <div class="brand">
+            <h1 class="brand-title">SecureDrop</h1>
+            <p class="brand-subtitle">
+                Private file encryption. Nothing leaves your device.
+            </p>
         </div>
-      </div>
 
-      <button
-        id="themeBtn"
-        class="icon-btn"
-        aria-label="Toggle appearance"
-      >
-        ☼
-      </button>
+        <button
+            id="themeToggle"
+            class="theme-toggle"
+            type="button"
+            aria-label="Toggle theme"
+        >
+            ☼
+        </button>
 
     </header>
 
 
-    <section class="workspace">
-
-      <!-- Encrypt / Decrypt -->
-
-      <div
-        class="segmented"
-        role="tablist"
-        aria-label="Operation"
-      >
+    <!-- Encrypt / Decrypt -->
+    <div class="mode-switch">
 
         <button
-          id="encryptTab"
-          class="segment active"
-          role="tab"
+            id="encryptMode"
+            class="mode-button active"
+            type="button"
         >
-          Encrypt
+            Encrypt
         </button>
 
         <button
-          id="decryptTab"
-          class="segment"
-          role="tab"
+            id="decryptMode"
+            class="mode-button"
+            type="button"
         >
-          Decrypt
+            Decrypt
         </button>
 
-      </div>
+    </div>
 
 
-      <!-- Drop Zone -->
+    <!-- Main Card -->
+    <main class="card">
 
-      <section
-        id="dropZone"
-        class="drop-zone"
-        tabindex="0"
-      >
-
-        <div class="drop-icon">
-          ＋
-        </div>
-
-        <h1 id="dropTitle">
-          Drop files here
-        </h1>
-
-        <p id="dropSubtitle">
-          or click to choose files from your device
-        </p>
-
-        <button
-          id="chooseBtn"
-          class="quiet-btn"
-        >
-          Choose files
-        </button>
-
-        <input
-          id="fileInput"
-          type="file"
-          multiple
-          hidden
-        >
-
-      </section>
-
-
-      <!-- Selected Files -->
-
-      <section
-        id="files"
-        class="file-list"
-        aria-live="polite"
-      ></section>
-
-
-      <!-- Password -->
-
-      <section class="security-card">
-
-        <div class="section-label">
-          Password
-        </div>
-
-        <div class="password-row">
-
-          <input
-            id="password"
-            type="password"
-            autocomplete="new-password"
-            placeholder="Enter a strong password"
-          >
-
-          <button
-            id="showPassword"
-            class="show-btn"
-          >
-            Show
-          </button>
-
-        </div>
-
+        <!-- Drop Zone -->
         <div
-          id="strength"
-          class="strength"
+            id="dropZone"
+            class="drop-zone"
+        >
+
+            <div class="drop-content">
+
+                <div class="drop-icon">
+                    +
+                </div>
+
+                <h2 class="drop-title">
+                    Drop files here
+                </h2>
+
+                <p class="drop-subtitle">
+                    or click to choose files from your device
+                </p>
+
+                <button
+                    id="chooseFiles"
+                    class="primary-button"
+                    type="button"
+                >
+                    Choose files
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- Hidden File Input -->
+        <input
+            id="fileInput"
+            type="file"
+            multiple
+        >
+
+
+        <!-- File List -->
+        <div
+            id="fileList"
+            class="file-list"
         ></div>
 
-        <input
-          id="confirmPassword"
-          type="password"
-          autocomplete="new-password"
-          placeholder="Confirm password"
-        >
 
-      </section>
+        <!-- Password -->
+        <section class="form-section">
+
+            <div class="field">
+
+                <label
+                    class="field-label"
+                    for="password"
+                >
+                    Password
+                </label>
+
+                <div class="input-wrapper">
+
+                    <input
+                        id="password"
+                        type="password"
+                        placeholder="Enter a strong password"
+                        autocomplete="new-password"
+                    >
+
+                    <button
+                        id="showPassword"
+                        class="show-password"
+                        type="button"
+                    >
+                        Show
+                    </button>
+
+                </div>
+
+            </div>
 
 
-      <!-- Progress -->
+            <!-- Confirm Password -->
+            <div
+                id="confirmField"
+                class="field"
+            >
 
-      <div
-        id="progressWrap"
-        class="progress-wrap hidden"
-      >
+                <label
+                    class="field-label"
+                    for="confirmPassword"
+                >
+                    Confirm password
+                </label>
 
-        <div class="progress-track">
+                <input
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="Confirm password"
+                    autocomplete="new-password"
+                >
 
-          <div
-            id="progressBar"
-            class="progress-bar"
-          ></div>
+            </div>
+
+        </section>
+
+
+        <!-- Progress -->
+        <section class="progress-section">
+
+            <div class="progress-track">
+
+                <div
+                    id="progressBar"
+                    class="progress-bar"
+                ></div>
+
+            </div>
+
+            <div class="progress-text">
+
+                <span id="status">
+                    Preparing...
+                </span>
+
+                <span id="progressPercent">
+                    0%
+                </span>
+
+            </div>
+
+        </section>
+
+
+        <!-- Actions -->
+        <div class="action-row">
+
+            <div class="status">
+                <span id="fileStatus">
+                    No files selected
+                </span>
+            </div>
+
+            <div class="action-group">
+
+                <button
+                    id="clearButton"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Clear
+                </button>
+
+                <button
+                    id="actionButton"
+                    class="primary-button"
+                    type="button"
+                >
+                    Encrypt
+                </button>
+
+            </div>
 
         </div>
 
-        <div id="progressText">
-          Preparing…
-        </div>
-
-      </div>
+    </main>
 
 
-      <!-- Actions -->
+    <!-- Security Footer -->
+    <footer class="security-footer">
 
-      <footer class="action-row">
+        <span>AES-256-GCM</span>
 
-        <div
-          id="status"
-          class="status"
-        >
-          No files selected
-        </div>
+        <span class="dot">•</span>
 
-        <div class="actions">
+        <span>Argon2id</span>
 
-          <button
-            id="clearBtn"
-            class="secondary-btn"
-          >
-            Clear
-          </button>
+        <span class="dot">•</span>
 
-          <button
-            id="runBtn"
-            class="primary-btn"
-          >
-            Encrypt
-          </button>
+        <span>Local-only</span>
 
-        </div>
+        <span class="dot">•</span>
 
-      </footer>
+        <span>No account</span>
+
+    </footer>
+
+</div>
 
 
-      <div class="footer-note">
-        AES-256-GCM · Argon2id · Local-only · No account
-      </div>
-
-    </section>
-
-  </main>
-
-
-  <div
-    id="toast"
-    class="toast"
-    role="status"
-  ></div>
-
-
-  <script
-    type="module"
-    src="app.js"
-  ></script>
+<script src="https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js"></script>
+<script type="module" src="app.js"></script>
 
 </body>
 </html>
