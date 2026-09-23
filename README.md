@@ -1,62 +1,75 @@
-# SecureDrop Web
+# SecureDrop
 
-A local-first browser implementation of SecureDrop.
+Private file encryption in your browser.
 
-## Run
+**Live:** https://securedropff.netlify.app/
 
-Open CMD inside the SecureDrop-Web folder:
+SecureDrop is a privacy-focused file encryption application that lets you
+encrypt and decrypt files directly in your browser.
 
-    py -m http.server 8080
+No account. No file upload. No backend required for the encryption workflow.
 
-Then open:
+---
 
-    http://localhost:8080
+## Live Application
 
-Do not open index.html directly with file:// if you want PWA/service-worker behavior.
+Use SecureDrop here:
 
-## Features
+https://securedropff.netlify.app/
 
-- Apple-inspired interface
-- Zinc typography
-- Encrypt / Decrypt
-- Drag and drop
-- AES-256-GCM
-- Argon2id
-- Local browser processing
-- No account
-- No backend
-- No file upload
-- Dark mode
-- PWA support
-- Responsive design
+The application provides:
 
-## Security
+- File encryption
+- File decryption
+- Drag-and-drop file selection
+- Password-based encryption
+- AES-256-GCM encryption
+- Argon2id key derivation
+- Light and dark mode
+- Browser-based processing
+- `.sdrop` encrypted packages
 
-The browser derives a 256-bit encryption key using Argon2id.
+---
 
-Parameters:
+## How It Works
 
-- Memory: 64 MiB
-- Iterations: 3
-- Parallelism: 2
-- Salt: 128 bits
-- AES-GCM nonce: 96 bits
+## While Encrypting
 
-Files are encrypted locally using the Web Crypto API.
+SecureDrop performs the encryption workflow inside the browser.
 
-## Development note
+```text
+Your File
+    │
+    ▼
+Password
+    │
+    ▼
+Argon2id
+    │
+    ▼
+Encryption Key
+    │
+    ▼
+AES-256-GCM
+    │
+    ▼
+.sdrop Package
 
-The browser implementation uses a versioned browser .sdrop format.
+## While Decrypting
 
-It should not be assumed to be byte-compatible with the existing Python desktop SecureDrop format until the Python crypto serialization is explicitly ported.
-
-## Production
-
-Before production release:
-
-1. Bundle Argon2 locally instead of relying on the CDN.
-2. Serve the application over HTTPS.
-3. Add proper PWA icons.
-4. Add large-file streaming/chunking.
-5. Add folder packaging.
-6. Add automated cryptographic interoperability tests.
+.sdrop Package
+    │
+    ▼
+Password
+    │
+    ▼
+Argon2id
+    │
+    ▼
+Encryption Key
+    │
+    ▼
+AES-256-GCM
+    │
+    ▼
+Original File
