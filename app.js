@@ -1,84 +1,39 @@
-/* =========================================================
-   DOM HELPER
-========================================================= */
+const $ = (id) => document.getElementById(id);
 
-const $ = (id) =>
-    document.getElementById(id);
+const dropZone = $("dropZone");
+const dropTitle = $("dropTitle");
+const dropSubtitle = $("dropSubtitle");
+const fileInput = $("fileInput");
+const chooseFiles = $("chooseFiles");
+const fileList = $("fileList");
 
+const password = $("password");
+const confirmPassword = $("confirmPassword");
+const confirmField = $("confirmField");
+const showPassword = $("showPassword");
 
-/* =========================================================
-   ELEMENTS
-========================================================= */
+const encryptMode = $("encryptMode");
+const decryptMode = $("decryptMode");
 
-const dropZone =
-    $("dropZone");
+const clearButton = $("clearButton");
+const cancelButton = $("cancelButton");
+const actionButton = $("actionButton");
 
-const dropTitle =
-    $("dropTitle");
+const themeToggle = $("themeToggle");
 
-const dropSubtitle =
-    $("dropSubtitle");
+const progressSection = $("progressSection");
+const progressBar = $("progressBar");
+const progressPercent = $("progressPercent");
+const status = $("status");
+const fileStatus = $("fileStatus");
 
-const fileInput =
-    $("fileInput");
+const ambientBackground = document.querySelector(
+    ".ambient-background"
+);
 
-const chooseFiles =
-    $("chooseFiles");
-
-const fileList =
-    $("fileList");
-
-const password =
-    $("password");
-
-const confirmPassword =
-    $("confirmPassword");
-
-const confirmField =
-    $("confirmField");
-
-const showPassword =
-    $("showPassword");
-
-const encryptMode =
-    $("encryptMode");
-
-const decryptMode =
-    $("decryptMode");
-
-const clearButton =
-    $("clearButton");
-
-const actionButton =
-    $("actionButton");
-
-const themeToggle =
-    $("themeToggle");
-
-const progressSection =
-    $("progressSection");
-
-const progressBar =
-    $("progressBar");
-
-const progressPercent =
-    $("progressPercent");
-
-const status =
-    $("status");
-
-const fileStatus =
-    $("fileStatus");
-
-const ambientBackground =
-    document.querySelector(
-        ".ambient-background"
-    );
-
-const ambientParticles =
-    document.getElementById(
-        "ambientParticles"
-    );
+const ambientParticles = document.getElementById(
+    "ambientParticles"
+);
 
 
 /* =========================================================
@@ -86,61 +41,65 @@ const ambientParticles =
 ========================================================= */
 
 let selectedFiles = [];
-
-let currentMode =
-    "encrypt";
-
-let operationRunning =
-    false;
+let currentMode = "encrypt";
+let operationRunning = false;
+let operationController = null;
 
 
 /* =========================================================
-   FORMAT
+   FILE FORMAT
+
+   Version 2 is chunked.
+
+   Layout:
+
+       4 bytes      magic: SDRP
+       4 bytes      header length, big-endian
+       N bytes      JSON header
+       chunk 0      ciphertext + GCM tag
+       chunk 1      ciphertext + GCM tag
+       ...
+
+   Every chunk has its own unique 96-bit AES-GCM nonce:
+
+       4 bytes random nonce prefix
+       8 bytes chunk index
+
+   Every chunk also authenticates:
+
+       headerBytes + chunkIndex
+
+   This binds the file metadata and chunk ordering.
 ========================================================= */
 
 const FORMAT = {
+    magic: "SDRP",
+    version: 2,
+    legacyVersion: 1,
 
-    magic:
-        "SDRP",
+    cipher: "AES-256-GCM",
+    kdf: "Argon2id",
 
-    version:
-        1,
+    memory: 65536,
+    iterations: 3,
+    parallelism: 2,
 
-    cipher:
-        "AES-256-GCM",
+    saltLength: 16,
+    noncePrefixLength: 4,
 
-    kdf:
-        "Argon2id",
-
-    memory:
-        65536,
-
-    iterations:
-        3,
-
-    parallelism:
-        2,
-
-    saltLength:
-        16,
-
-    nonceLength:
-        12
+    chunkSize: 4 * 1024 * 1024,
+    gcmTagLength: 16
 };
+
+const MAX_HEADER_SIZE = 1024 * 1024;
 
 
 /* =========================================================
-   UI
+   INITIAL UI
 ========================================================= */
 
 function updateUI() {
-
-    const decrypting =
-        currentMode ===
-        "decrypt";
-
-
-    /* Mode */
+    const decrypting = currentMode === "decrypt";
 
     encryptMode.classList.toggle(
         "active",
@@ -152,7 +111,6 @@ function updateUI() {
         decrypting
     );
 
-
     encryptMode.setAttribute(
         "aria-selected",
         String(!decrypting)
@@ -163,35 +121,19 @@ function updateUI() {
         String(decrypting)
     );
 
+    actionButton.textContent = decrypting
+        ? "Decrypt"
+        : "Encrypt";
 
-    /* Button */
+    confirmField.style.display = decrypting
+        ? "none"
+        : "block";
 
-    actionButton.textContent =
-        decrypting
-            ? "Decrypt"
-            : "Encrypt";
-
-
-    /* Confirmation */
-
-    confirmField.style.display =
-        decrypting
-            ? "none"
-            : "block";
-
-
-    /* File input */
-
-    fileInput.accept =
-        decrypting
-            ? ".sdrop"
-            : "";
-
-
-    /* Drop zone */
+    fileInput.accept = decrypting
+        ? ".sdrop"
+        : "";
 
     if (decrypting) {
-
         dropTitle.textContent =
             "Drop a .sdrop package here";
 
@@ -200,22 +142,18 @@ function updateUI() {
 
         chooseFiles.textContent =
             "Choose package";
-
     } else {
-
         dropTitle.textContent =
             "Drop files here";
 
         dropSubtitle.textContent =
-            "or click to choose files from your device";
+            "or click to choose a file from your device";
 
         chooseFiles.textContent =
             "Choose file";
     }
 
-
     renderFiles();
-
     updateFileStatus();
 }
 
@@ -224,72 +162,39 @@ function updateUI() {
    THEME
 ========================================================= */
 
-const savedTheme =
-    localStorage.getItem(
-        "securedrop-theme"
-    );
+const savedTheme = localStorage.getItem(
+    "securedrop-theme"
+);
 
-
-if (
-    savedTheme ===
-    "dark"
-) {
-
-    document.documentElement.dataset.theme =
-        "dark";
-
-    themeToggle.textContent =
-        "☀";
-
+if (savedTheme === "dark") {
+    document.documentElement.dataset.theme = "dark";
+    themeToggle.textContent = "☀";
 } else {
-
-    themeToggle.textContent =
-        "☼";
+    themeToggle.textContent = "☼";
 }
 
 
 themeToggle.addEventListener(
     "click",
     () => {
-
         if (operationRunning) {
             return;
         }
 
-
         const dark =
-            document
-                .documentElement
-                .dataset
-                .theme ===
-            "dark";
-
+            document.documentElement.dataset.theme === "dark";
 
         if (dark) {
-
-            delete document
-                .documentElement
-                .dataset
-                .theme;
-
-            themeToggle.textContent =
-                "☼";
+            delete document.documentElement.dataset.theme;
+            themeToggle.textContent = "☼";
 
             localStorage.setItem(
                 "securedrop-theme",
                 "light"
             );
-
         } else {
-
-            document
-                .documentElement
-                .dataset
-                .theme =
-                "dark";
-
-            themeToggle.textContent =
-                "☀";
+            document.documentElement.dataset.theme = "dark";
+            themeToggle.textContent = "☀";
 
             localStorage.setItem(
                 "securedrop-theme",
@@ -301,38 +206,28 @@ themeToggle.addEventListener(
 
 
 /* =========================================================
-   MODE SWITCHING
+   MODE
 ========================================================= */
 
 encryptMode.addEventListener(
     "click",
     () => {
-
         if (operationRunning) {
             return;
         }
 
+        if (currentMode === "encrypt") {
+            return;
+        }
 
-        currentMode =
-            "encrypt";
+        currentMode = "encrypt";
+        selectedFiles = [];
 
-
-        selectedFiles =
-            [];
-
-
-        password.value =
-            "";
-
-        confirmPassword.value =
-            "";
-
-        fileInput.value =
-            "";
-
+        password.value = "";
+        confirmPassword.value = "";
+        fileInput.value = "";
 
         resetProgress();
-
         updateUI();
     }
 );
@@ -341,32 +236,22 @@ encryptMode.addEventListener(
 decryptMode.addEventListener(
     "click",
     () => {
-
         if (operationRunning) {
             return;
         }
 
+        if (currentMode === "decrypt") {
+            return;
+        }
 
-        currentMode =
-            "decrypt";
+        currentMode = "decrypt";
+        selectedFiles = [];
 
-
-        selectedFiles =
-            [];
-
-
-        password.value =
-            "";
-
-        confirmPassword.value =
-            "";
-
-        fileInput.value =
-            "";
-
+        password.value = "";
+        confirmPassword.value = "";
+        fileInput.value = "";
 
         resetProgress();
-
         updateUI();
     }
 );
@@ -379,14 +264,11 @@ decryptMode.addEventListener(
 chooseFiles.addEventListener(
     "click",
     (event) => {
-
         event.stopPropagation();
-
 
         if (operationRunning) {
             return;
         }
-
 
         fileInput.click();
     }
@@ -396,11 +278,9 @@ chooseFiles.addEventListener(
 dropZone.addEventListener(
     "click",
     () => {
-
         if (operationRunning) {
             return;
         }
-
 
         fileInput.click();
     }
@@ -410,31 +290,25 @@ dropZone.addEventListener(
 fileInput.addEventListener(
     "change",
     () => {
-
         if (operationRunning) {
             return;
         }
 
-
-        const files =
-            Array.from(
-                fileInput.files
-            );
-
+        const files = Array.from(
+            fileInput.files || []
+        );
 
         if (files.length > 0) {
             addFiles(files);
         }
 
-
-        fileInput.value =
-            "";
+        fileInput.value = "";
     }
 );
 
 
 /* =========================================================
-   DRAG AND DROP
+   DRAG & DROP
 ========================================================= */
 
 [
@@ -442,22 +316,15 @@ fileInput.addEventListener(
     "dragover"
 ].forEach(
     (eventName) => {
-
         dropZone.addEventListener(
             eventName,
             (event) => {
-
                 event.preventDefault();
-
                 event.stopPropagation();
 
-
-                if (
-                    operationRunning
-                ) {
+                if (operationRunning) {
                     return;
                 }
-
 
                 dropZone.classList.add(
                     "dragover"
@@ -473,15 +340,11 @@ fileInput.addEventListener(
     "drop"
 ].forEach(
     (eventName) => {
-
         dropZone.addEventListener(
             eventName,
             (event) => {
-
                 event.preventDefault();
-
                 event.stopPropagation();
-
 
                 dropZone.classList.remove(
                     "dragover"
@@ -495,17 +358,14 @@ fileInput.addEventListener(
 dropZone.addEventListener(
     "drop",
     (event) => {
-
         if (operationRunning) {
             return;
         }
 
-
         const files =
             Array.from(
-                event.dataTransfer.files
+                event.dataTransfer?.files || []
             );
-
 
         if (files.length > 0) {
             addFiles(files);
@@ -519,99 +379,63 @@ dropZone.addEventListener(
 ========================================================= */
 
 function addFiles(files) {
-
     if (operationRunning) {
         return;
     }
 
+    if (currentMode === "decrypt") {
+        const sdropFiles = files.filter(
+            (file) =>
+                file.name
+                    .toLowerCase()
+                    .endsWith(".sdrop")
+        );
 
-    if (
-        currentMode ===
-        "decrypt"
-    ) {
-
-        const sdropFiles =
-            files.filter(
-                (file) =>
-                    file.name
-                        .toLowerCase()
-                        .endsWith(".sdrop")
-            );
-
-
-        if (
-            sdropFiles.length ===
-            0
-        ) {
-
+        if (sdropFiles.length === 0) {
             setStatus(
                 "Choose a .sdrop package"
             );
-
             return;
         }
 
-
         selectedFiles =
-            sdropFiles.slice(
-                0,
-                1
-            );
+            sdropFiles.slice(0, 1);
 
     } else {
-
         /*
-         * One source file is used
-         * to create one .sdrop package.
+         * One source file creates one .sdrop package.
          */
-
         selectedFiles =
-            files.slice(
-                0,
-                1
-            );
+            files.slice(0, 1);
     }
 
-
     renderFiles();
-
     updateFileStatus();
-
     resetProgress();
 }
 
 
 function renderFiles() {
-
     const fragment =
         document.createDocumentFragment();
-
 
     for (
         let index = 0;
         index < selectedFiles.length;
         index++
     ) {
-
         const file =
             selectedFiles[index];
 
-
         const card =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
         card.className =
             "file-card";
 
 
-        /* Icon */
-
         const icon =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
         icon.className =
             "file-icon";
@@ -620,21 +444,15 @@ function renderFiles() {
             "＋";
 
 
-        /* Info */
-
         const info =
-            document.createElement(
-                "div"
-            );
+            document.createElement("div");
 
         info.className =
             "file-info";
 
 
         const name =
-            document.createElement(
-                "p"
-            );
+            document.createElement("p");
 
         name.className =
             "file-name";
@@ -644,34 +462,21 @@ function renderFiles() {
 
 
         const size =
-            document.createElement(
-                "p"
-            );
+            document.createElement("p");
 
         size.className =
             "file-size";
 
         size.textContent =
-            formatBytes(
-                file.size
-            );
+            formatBytes(file.size);
 
 
-        info.appendChild(
-            name
-        );
+        info.appendChild(name);
+        info.appendChild(size);
 
-        info.appendChild(
-            size
-        );
-
-
-        /* Remove button */
 
         const removeButton =
-            document.createElement(
-                "button"
-            );
+            document.createElement("button");
 
         removeButton.className =
             "file-remove";
@@ -691,45 +496,28 @@ function renderFiles() {
         removeButton.addEventListener(
             "click",
             () => {
-
                 if (operationRunning) {
                     return;
                 }
-
 
                 selectedFiles.splice(
                     index,
                     1
                 );
 
-
                 renderFiles();
-
                 updateFileStatus();
-
                 resetProgress();
             }
         );
 
 
-        card.appendChild(
-            icon
-        );
+        card.appendChild(icon);
+        card.appendChild(info);
+        card.appendChild(removeButton);
 
-        card.appendChild(
-            info
-        );
-
-        card.appendChild(
-            removeButton
-        );
-
-
-        fragment.appendChild(
-            card
-        );
+        fragment.appendChild(card);
     }
-
 
     fileList.replaceChildren(
         fragment
@@ -738,70 +526,45 @@ function renderFiles() {
 
 
 function updateFileStatus() {
-
-    if (
-        selectedFiles.length ===
-        0
-    ) {
-
+    if (selectedFiles.length === 0) {
         fileStatus.textContent =
             "No files selected";
-
         return;
     }
-
-
-    if (
-        selectedFiles.length ===
-        1
-    ) {
-
-        fileStatus.textContent =
-            selectedFiles[0].name;
-
-        return;
-    }
-
 
     fileStatus.textContent =
-        `${selectedFiles.length} files selected`;
+        selectedFiles[0].name;
 }
 
 
 function formatBytes(bytes) {
-
     if (bytes === 0) {
         return "0 B";
     }
-
 
     const units = [
         "B",
         "KB",
         "MB",
         "GB",
-        "TB"
+        "TB",
+        "PB"
     ];
 
-
-    const index =
+    const index = Math.min(
         Math.floor(
             Math.log(bytes) /
             Math.log(1024)
-        );
-
+        ),
+        units.length - 1
+    );
 
     return (
         `${(
             bytes /
-            Math.pow(
-                1024,
-                index
-            )
+            Math.pow(1024, index)
         ).toFixed(
-            index === 0
-                ? 0
-                : 1
+            index === 0 ? 0 : 1
         )} ${units[index]}`
     );
 }
@@ -814,64 +577,23 @@ function formatBytes(bytes) {
 showPassword.addEventListener(
     "click",
     () => {
-
         const visible =
-            password.type ===
-            "password";
-
+            password.type === "password";
 
         password.type =
             visible
                 ? "text"
                 : "password";
 
-
         confirmPassword.type =
             visible
                 ? "text"
                 : "password";
 
-
         showPassword.textContent =
             visible
                 ? "Hide"
                 : "Show";
-    }
-);
-
-
-/* =========================================================
-   CLEAR
-========================================================= */
-
-clearButton.addEventListener(
-    "click",
-    () => {
-
-        if (operationRunning) {
-            return;
-        }
-
-
-        selectedFiles =
-            [];
-
-
-        password.value =
-            "";
-
-        confirmPassword.value =
-            "";
-
-        fileInput.value =
-            "";
-
-
-        renderFiles();
-
-        updateFileStatus();
-
-        resetProgress();
     }
 );
 
@@ -884,7 +606,6 @@ function setProgress(
     value,
     message = ""
 ) {
-
     const percentage =
         Math.max(
             0,
@@ -894,28 +615,16 @@ function setProgress(
             )
         );
 
-
-    /*
-     * Progress is visible only
-     * when an operation starts.
-     */
-
     progressSection.hidden =
         false;
-
 
     progressBar.style.width =
         `${percentage}%`;
 
-
     progressPercent.textContent =
-        `${Math.round(
-            percentage
-        )}%`;
-
+        `${Math.round(percentage)}%`;
 
     if (message) {
-
         status.textContent =
             message;
     }
@@ -923,22 +632,14 @@ function setProgress(
 
 
 function resetProgress() {
-
     progressBar.style.width =
         "0%";
-
 
     progressPercent.textContent =
         "0%";
 
-
     status.textContent =
         "Ready";
-
-
-    /*
-     * Hide progress when idle.
-     */
 
     progressSection.hidden =
         true;
@@ -950,17 +651,14 @@ function resetProgress() {
 ========================================================= */
 
 function setBusy(busy) {
-
     operationRunning =
         busy;
-
 
     encryptMode.disabled =
         busy;
 
     decryptMode.disabled =
         busy;
-
 
     chooseFiles.disabled =
         busy;
@@ -971,7 +669,6 @@ function setBusy(busy) {
     actionButton.disabled =
         busy;
 
-
     password.disabled =
         busy;
 
@@ -981,18 +678,71 @@ function setBusy(busy) {
     showPassword.disabled =
         busy;
 
-
     themeToggle.disabled =
         busy;
 
+    if (cancelButton) {
+        cancelButton.hidden =
+            !busy;
+
+        cancelButton.disabled =
+            !busy;
+    }
+
+    dropZone.style.pointerEvents =
+        busy
+            ? "none"
+            : "";
 
     if (busy) {
-
         dropZone.classList.remove(
             "dragover"
         );
     }
 }
+
+
+/* =========================================================
+   CANCEL
+========================================================= */
+
+if (cancelButton) {
+    cancelButton.addEventListener(
+        "click",
+        () => {
+            if (
+                operationRunning &&
+                operationController
+            ) {
+                operationController.abort();
+            }
+        }
+    );
+}
+
+
+/* =========================================================
+   CLEAR
+========================================================= */
+
+clearButton.addEventListener(
+    "click",
+    () => {
+        if (operationRunning) {
+            return;
+        }
+
+        selectedFiles = [];
+
+        password.value = "";
+        confirmPassword.value = "";
+        fileInput.value = "";
+
+        renderFiles();
+        updateFileStatus();
+        resetProgress();
+    }
+);
 
 
 /* =========================================================
@@ -1002,21 +752,13 @@ function setBusy(busy) {
 actionButton.addEventListener(
     "click",
     async () => {
-
         if (operationRunning) {
             return;
         }
 
-
-        if (
-            currentMode ===
-            "encrypt"
-        ) {
-
+        if (currentMode === "encrypt") {
             await encryptFiles();
-
         } else {
-
             await decryptFiles();
         }
     }
@@ -1024,140 +766,165 @@ actionButton.addEventListener(
 
 
 /* =========================================================
-   ENCRYPT
+   VALIDATION
+========================================================= */
+
+function validatePasswordForEncryption() {
+    if (!password.value) {
+        setStatus(
+            "Enter a password"
+        );
+
+        password.focus();
+
+        return false;
+    }
+
+    if (password.value.length < 8) {
+        setStatus(
+            "Password must be at least 8 characters"
+        );
+
+        password.focus();
+
+        return false;
+    }
+
+    if (
+        password.value !==
+        confirmPassword.value
+    ) {
+        setStatus(
+            "Passwords do not match"
+        );
+
+        confirmPassword.focus();
+
+        return false;
+    }
+
+    return true;
+}
+
+
+function validatePasswordForDecryption() {
+    if (!password.value) {
+        setStatus(
+            "Enter the password"
+        );
+
+        password.focus();
+
+        return false;
+    }
+
+    return true;
+}
+
+
+function ensureArgon2Loaded() {
+    if (!window.argon2) {
+        throw new Error(
+            "Argon2 failed to load"
+        );
+    }
+}
+
+
+/* =========================================================
+   ENCRYPTION
 ========================================================= */
 
 async function encryptFiles() {
-
     if (operationRunning) {
         return;
     }
 
+    if (
+        selectedFiles.length ===
+        0
+    ) {
+        setStatus(
+            "Choose a file first"
+        );
+
+        return;
+    }
+
+    if (
+        !validatePasswordForEncryption()
+    ) {
+        return;
+    }
+
+    ensureArgon2Loaded();
+
+    const file =
+        selectedFiles[0];
+
+    let writer;
+
+
+    /*
+     * Open the save picker before the first
+     * asynchronous crypto operation.
+     */
 
     try {
+        writer =
+            await createOutputWriter(
+                buildEncryptedFilename(
+                    file.name
+                )
+            );
 
-        /* File */
+    } catch (error) {
 
         if (
-            selectedFiles.length ===
-            0
+            error?.name ===
+            "AbortError"
         ) {
-
             setStatus(
-                "Choose a file first"
+                "Save cancelled"
             );
 
             return;
         }
 
+        console.error(error);
 
-        /* Password */
+        setStatus(
+            error?.message ||
+            "Could not open output file"
+        );
 
-        if (!password.value) {
-
-            setStatus(
-                "Enter a password"
-            );
-
-            password.focus();
-
-            return;
-        }
+        return;
+    }
 
 
-        /* Minimum length */
+    operationController =
+        new AbortController();
 
-        if (
-            password.value.length <
-            8
-        ) {
-
-            setStatus(
-                "Password must be at least 8 characters"
-            );
-
-            password.focus();
-
-            return;
-        }
+    const signal =
+        operationController.signal;
 
 
-        /* Confirmation */
-
-        if (
-            password.value !==
-            confirmPassword.value
-        ) {
-
-            setStatus(
-                "Passwords do not match"
-            );
-
-            confirmPassword.focus();
-
-            return;
-        }
+    setBusy(true);
 
 
-        /* Argon2 */
-
-        if (!window.argon2) {
-
-            throw new Error(
-                "Argon2 failed to load"
-            );
-        }
-
-
-        setBusy(true);
-
-
-        /* Initial state */
+    try {
 
         setProgress(
             0,
             "Preparing..."
         );
 
+        await nextFrame();
 
-        /*
-         * Give the browser time to
-         * render the progress state.
-         */
-
-        await new Promise(
-            (resolve) =>
-                requestAnimationFrame(
-                    resolve
-                )
-        );
+        throwIfAborted(signal);
 
 
-        const file =
-            selectedFiles[0];
-
-
-        /* Read */
-
-        setProgress(
-            5,
-            "Reading file..."
-        );
-
-
-        const plaintext =
-            new Uint8Array(
-                await file.arrayBuffer()
-            );
-
-
-        /* Salt */
-
-        setProgress(
-            15,
-            "Generating encryption parameters..."
-        );
-
+        /* Generate crypto parameters */
 
         const salt =
             crypto.getRandomValues(
@@ -1167,63 +934,34 @@ async function encryptFiles() {
             );
 
 
-        /* Nonce */
-
-        const nonce =
+        const noncePrefix =
             crypto.getRandomValues(
                 new Uint8Array(
-                    FORMAT.nonceLength
+                    FORMAT.noncePrefixLength
                 )
             );
 
 
-        /* Argon2 */
-
-        setProgress(
-            25,
-            "Deriving encryption key..."
-        );
-
-
-        const keyBytes =
-            await deriveKey(
-                password.value,
-                salt
-            );
+        const chunkCount =
+            file.size === 0
+                ? 0
+                : Math.ceil(
+                    file.size /
+                    FORMAT.chunkSize
+                );
 
 
-        /* AES key */
-
-        setProgress(
-            45,
-            "Preparing AES-256-GCM..."
-        );
-
-
-        const key =
-            await crypto.subtle.importKey(
-                "raw",
-                keyBytes,
-                {
-                    name:
-                        "AES-GCM"
-                },
-                false,
-                [
-                    "encrypt"
-                ]
-            );
-
-
-        /* Metadata */
+        /* Package metadata */
 
         const header = {
-
             magic:
                 FORMAT.magic,
 
             version:
                 FORMAT.version,
+
+            format:
+                "chunked",
 
             cipher:
                 FORMAT.cipher,
@@ -1240,21 +978,27 @@ async function encryptFiles() {
             parallelism:
                 FORMAT.parallelism,
 
+            chunkSize:
+                FORMAT.chunkSize,
+
+            chunkCount:
+                chunkCount,
+
+            fileSize:
+                file.size,
+
             salt:
                 bytesToBase64(
                     salt
                 ),
 
-            nonce:
+            noncePrefix:
                 bytesToBase64(
-                    nonce
+                    noncePrefix
                 ),
 
             filename:
                 file.name,
-
-            size:
-                file.size,
 
             mime:
                 file.type ||
@@ -1270,305 +1014,15 @@ async function encryptFiles() {
             );
 
 
-        /* Encrypt */
+        validateHeaderSize(
+            headerBytes
+        );
+
+
+        /* Key derivation */
 
         setProgress(
-            60,
-            "Encrypting file..."
-        );
-
-
-        const encrypted =
-            await crypto.subtle.encrypt(
-                {
-                    name:
-                        "AES-GCM",
-
-                    iv:
-                        nonce,
-
-                    additionalData:
-                        headerBytes,
-
-                    tagLength:
-                        128
-                },
-
-                key,
-
-                plaintext
-            );
-
-
-        /* Package */
-
-        setProgress(
-            85,
-            "Building SecureDrop package..."
-        );
-
-
-        const packageBytes =
-            createPackage(
-                headerBytes,
-                new Uint8Array(
-                    encrypted
-                )
-            );
-
-
-        /* Name */
-
-        const outputName =
-            file.name.replace(
-                /\.[^/.]+$/,
-                ""
-            ) +
-            ".sdrop";
-
-
-        /* Download */
-
-        downloadFile(
-            packageBytes,
-            outputName,
-            "application/octet-stream"
-        );
-
-
-        /* Done */
-
-        setProgress(
-            100,
-            "Encryption complete"
-        );
-
-
-        setStatus(
-            "SecureDrop package created"
-        );
-
-    } catch (error) {
-
-        console.error(
-            "Encryption error:",
-            error
-        );
-
-
-        setProgress(
-            0,
-            "Encryption failed"
-        );
-
-
-        setStatus(
-            error?.message ||
-            "Encryption failed"
-        );
-
-    } finally {
-
-        setBusy(false);
-    }
-}
-
-
-/* =========================================================
-   DECRYPT
-========================================================= */
-
-async function decryptFiles() {
-
-    if (operationRunning) {
-        return;
-    }
-
-
-    try {
-
-        /* Package */
-
-        if (
-            selectedFiles.length ===
-            0
-        ) {
-
-            setStatus(
-                "Choose a .sdrop file first"
-            );
-
-            return;
-        }
-
-
-        /* Password */
-
-        if (!password.value) {
-
-            setStatus(
-                "Enter the password"
-            );
-
-            password.focus();
-
-            return;
-        }
-
-
-        /* Argon2 */
-
-        if (!window.argon2) {
-
-            throw new Error(
-                "Argon2 failed to load"
-            );
-        }
-
-
-        setBusy(true);
-
-
-        setProgress(
-            0,
-            "Preparing..."
-        );
-
-
-        await new Promise(
-            (resolve) =>
-                requestAnimationFrame(
-                    resolve
-                )
-        );
-
-
-        const packageFile =
-            selectedFiles[0];
-
-
-        /* Read */
-
-        setProgress(
-            5,
-            "Reading SecureDrop package..."
-        );
-
-
-        const packageBytes =
-            new Uint8Array(
-                await packageFile.arrayBuffer()
-            );
-
-
-        /* Parse */
-
-        setProgress(
-            20,
-            "Reading package metadata..."
-        );
-
-
-        const parsed =
-            parsePackage(
-                packageBytes
-            );
-
-
-        /* Magic */
-
-        if (
-            parsed.header.magic !==
-            FORMAT.magic
-        ) {
-
-            throw new Error(
-                "Invalid SecureDrop package"
-            );
-        }
-
-
-        /* Version */
-
-        if (
-            parsed.header.version !==
-            FORMAT.version
-        ) {
-
-            throw new Error(
-                "Unsupported SecureDrop version"
-            );
-        }
-
-
-        /* KDF */
-
-        if (
-            parsed.header.kdf !==
-            FORMAT.kdf
-        ) {
-
-            throw new Error(
-                "Unsupported key derivation function"
-            );
-        }
-
-
-        /* Cipher */
-
-        if (
-            parsed.header.cipher !==
-            FORMAT.cipher
-        ) {
-
-            throw new Error(
-                "Unsupported encryption algorithm"
-            );
-        }
-
-
-        /* Metadata */
-
-        if (
-            typeof
-            parsed.header.salt !==
-            "string"
-        ) {
-
-            throw new Error(
-                "Invalid package salt"
-            );
-        }
-
-
-        if (
-            typeof
-            parsed.header.nonce !==
-            "string"
-        ) {
-
-            throw new Error(
-                "Invalid package nonce"
-            );
-        }
-
-
-        const salt =
-            base64ToBytes(
-                parsed.header.salt
-            );
-
-
-        const nonce =
-            base64ToBytes(
-                parsed.header.nonce
-            );
-
-
-        /* Key */
-
-        setProgress(
-            35,
+            8,
             "Deriving encryption key..."
         );
 
@@ -1580,7 +1034,12 @@ async function decryptFiles() {
             );
 
 
-        /* AES */
+        throwIfAborted(
+            signal
+        );
+
+
+        /* AES key */
 
         const key =
             await crypto.subtle.importKey(
@@ -1592,67 +1051,385 @@ async function decryptFiles() {
                 },
                 false,
                 [
-                    "decrypt"
+                    "encrypt"
                 ]
             );
 
 
-        /* Decrypt */
-
-        setProgress(
-            65,
-            "Decrypting file..."
+        throwIfAborted(
+            signal
         );
 
 
-        const decrypted =
-            await crypto.subtle.decrypt(
-                {
-                    name:
-                        "AES-GCM",
+        /* Package header */
 
-                    iv:
-                        nonce,
+        await writer.write(
+            createPackagePrefix(
+                headerBytes
+            )
+        );
 
-                    additionalData:
-                        parsed.headerBytes,
 
-                    tagLength:
-                        128
-                },
+        /* Encrypt chunks */
 
-                key,
+        let offset =
+            0;
 
-                parsed.ciphertext
+        let chunkIndex =
+            0;
+
+
+        while (
+            offset <
+            file.size
+        ) {
+
+            throwIfAborted(
+                signal
             );
 
 
-        /* Restore */
+            const end =
+                Math.min(
+                    offset +
+                    FORMAT.chunkSize,
+                    file.size
+                );
+
+
+            const plaintext =
+                new Uint8Array(
+                    await file
+                        .slice(
+                            offset,
+                            end
+                        )
+                        .arrayBuffer()
+                );
+
+
+            throwIfAborted(
+                signal
+            );
+
+
+            const nonce =
+                makeChunkNonce(
+                    noncePrefix,
+                    chunkIndex
+                );
+
+
+            const aad =
+                makeChunkAAD(
+                    headerBytes,
+                    chunkIndex
+                );
+
+
+            const encrypted =
+                new Uint8Array(
+                    await crypto.subtle.encrypt(
+                        {
+                            name:
+                                "AES-GCM",
+
+                            iv:
+                                nonce,
+
+                            additionalData:
+                                aad,
+
+                            tagLength:
+                                128
+                        },
+
+                        key,
+
+                        plaintext
+                    )
+                );
+
+
+            throwIfAborted(
+                signal
+            );
+
+
+            await writer.write(
+                encrypted
+            );
+
+
+            offset =
+                end;
+
+            chunkIndex++;
+
+
+            const percentage =
+                file.size > 0
+                    ? (
+                        offset /
+                        file.size
+                    ) *
+                    100
+                    : 100;
+
+
+            setProgress(
+                percentage,
+                `Encrypting ${formatBytes(offset)} / ${formatBytes(file.size)}`
+            );
+
+
+            /*
+             * Give the browser a chance
+             * to update the UI.
+             */
+
+            await nextFrame();
+        }
+
+
+        throwIfAborted(
+            signal
+        );
+
+
+        await writer.close();
+
+
+        password.value = "";
+        confirmPassword.value = "";
+
 
         setProgress(
-            90,
-            "Preparing decrypted file..."
+            100,
+            "Encryption complete"
         );
 
 
-        const filename =
-            parsed.header.filename ||
-            "decrypted-file";
-
-
-        downloadFile(
-            new Uint8Array(
-                decrypted
-            ),
-
-            filename,
-
-            parsed.header.mime ||
-            "application/octet-stream"
+        setStatus(
+            "SecureDrop package created"
         );
 
 
-        /* Done */
+    } catch (error) {
+
+        await writer.abort(
+            error
+        );
+
+
+        if (
+            isAbortError(
+                error
+            )
+        ) {
+
+            resetProgress();
+
+            setStatus(
+                "Operation cancelled"
+            );
+
+        } else {
+
+            console.error(
+                "Encryption error:",
+                error
+            );
+
+
+            setProgress(
+                0,
+                "Encryption failed"
+            );
+
+
+            setStatus(
+                error?.message ||
+                "Encryption failed"
+            );
+        }
+
+
+    } finally {
+
+        operationController =
+            null;
+
+        setBusy(false);
+    }
+}
+
+
+/* =========================================================
+   DECRYPTION
+========================================================= */
+
+async function decryptFiles() {
+    if (operationRunning) {
+        return;
+    }
+
+    if (
+        selectedFiles.length ===
+        0
+    ) {
+
+        setStatus(
+            "Choose a .sdrop file first"
+        );
+
+        return;
+    }
+
+
+    if (
+        !validatePasswordForDecryption()
+    ) {
+        return;
+    }
+
+
+    ensureArgon2Loaded();
+
+
+    const packageFile =
+        selectedFiles[0];
+
+
+    const suggestedName =
+        packageFile.name.replace(
+            /\.sdrop$/i,
+            ""
+        ) ||
+        "decrypted-file";
+
+
+    let writer;
+
+
+    try {
+
+        writer =
+            await createOutputWriter(
+                suggestedName
+            );
+
+    } catch (error) {
+
+        if (
+            error?.name ===
+            "AbortError"
+        ) {
+
+            setStatus(
+                "Save cancelled"
+            );
+
+            return;
+        }
+
+
+        console.error(error);
+
+
+        setStatus(
+            error?.message ||
+            "Could not open output file"
+        );
+
+        return;
+    }
+
+
+    operationController =
+        new AbortController();
+
+
+    const signal =
+        operationController.signal;
+
+
+    setBusy(true);
+
+
+    try {
+
+        setProgress(
+            0,
+            "Preparing..."
+        );
+
+
+        await nextFrame();
+
+
+        throwIfAborted(
+            signal
+        );
+
+
+        const packageInfo =
+            await readPackageHeader(
+                packageFile
+            );
+
+
+        throwIfAborted(
+            signal
+        );
+
+
+        if (
+            packageInfo.header.version ===
+            FORMAT.version
+        ) {
+
+            await decryptV2(
+                packageFile,
+                packageInfo,
+                signal,
+                writer
+            );
+
+        } else if (
+            packageInfo.header.version ===
+            FORMAT.legacyVersion
+        ) {
+
+            await decryptV1(
+                packageFile,
+                packageInfo,
+                signal,
+                writer
+            );
+
+        } else {
+
+            throw new Error(
+                "Unsupported SecureDrop version"
+            );
+        }
+
+
+        throwIfAborted(
+            signal
+        );
+
+
+        await writer.close();
+
+
+        password.value =
+            "";
+
+        confirmPassword.value =
+            "";
+
 
         setProgress(
             100,
@@ -1664,41 +1441,470 @@ async function decryptFiles() {
             "File decrypted successfully"
         );
 
+
     } catch (error) {
 
-        console.error(
-            "Decryption error:",
+        await writer.abort(
             error
         );
 
 
-        setProgress(
-            0,
-            "Decryption failed"
-        );
-
-
         if (
-            error?.name ===
-            "OperationError"
+            isAbortError(
+                error
+            )
         ) {
 
+            resetProgress();
+
             setStatus(
-                "Wrong password or corrupted package"
+                "Operation cancelled"
             );
 
         } else {
 
-            setStatus(
-                error?.message ||
+            console.error(
+                "Decryption error:",
+                error
+            );
+
+
+            setProgress(
+                0,
                 "Decryption failed"
             );
+
+
+            if (
+                error?.name ===
+                "OperationError"
+            ) {
+
+                setStatus(
+                    "Wrong password or corrupted package"
+                );
+
+            } else {
+
+                setStatus(
+                    error?.message ||
+                    "Decryption failed"
+                );
+            }
         }
+
 
     } finally {
 
+        operationController =
+            null;
+
         setBusy(false);
     }
+}
+
+
+/* =========================================================
+   V2 DECRYPTION
+========================================================= */
+
+async function decryptV2(
+    packageFile,
+    packageInfo,
+    signal,
+    writer
+) {
+
+    const header =
+        validateV2Header(
+            packageInfo.header
+        );
+
+
+    const salt =
+        base64ToBytes(
+            header.salt
+        );
+
+
+    const noncePrefix =
+        base64ToBytes(
+            header.noncePrefix
+        );
+
+
+    const expectedPackageSize =
+        8 +
+        packageInfo.headerLength +
+        header.fileSize +
+        (
+            header.chunkCount *
+            FORMAT.gcmTagLength
+        );
+
+
+    if (
+        packageFile.size !==
+        expectedPackageSize
+    ) {
+
+        throw new Error(
+            "SecureDrop package is truncated or malformed"
+        );
+    }
+
+
+    setProgress(
+        8,
+        "Deriving encryption key..."
+    );
+
+
+    const keyBytes =
+        await deriveKey(
+            password.value,
+            salt
+        );
+
+
+    throwIfAborted(
+        signal
+    );
+
+
+    const key =
+        await crypto.subtle.importKey(
+            "raw",
+            keyBytes,
+            {
+                name:
+                    "AES-GCM"
+            },
+            false,
+            [
+                "decrypt"
+            ]
+        );
+
+
+    let offset =
+        8 +
+        packageInfo.headerLength;
+
+
+    let plaintextWritten =
+        0;
+
+
+    for (
+        let chunkIndex = 0;
+        chunkIndex <
+        header.chunkCount;
+        chunkIndex++
+    ) {
+
+        throwIfAborted(
+            signal
+        );
+
+
+        const remaining =
+            header.fileSize -
+            plaintextWritten;
+
+
+        const plaintextLength =
+            Math.min(
+                header.chunkSize,
+                remaining
+            );
+
+
+        const ciphertextLength =
+            plaintextLength +
+            FORMAT.gcmTagLength;
+
+
+        const encrypted =
+            new Uint8Array(
+                await packageFile
+                    .slice(
+                        offset,
+                        offset +
+                        ciphertextLength
+                    )
+                    .arrayBuffer()
+            );
+
+
+        if (
+            encrypted.length !==
+            ciphertextLength
+        ) {
+
+            throw new Error(
+                "SecureDrop package is truncated"
+            );
+        }
+
+
+        const nonce =
+            makeChunkNonce(
+                noncePrefix,
+                chunkIndex
+            );
+
+
+        const aad =
+            makeChunkAAD(
+                packageInfo.headerBytes,
+                chunkIndex
+            );
+
+
+        const plaintext =
+            new Uint8Array(
+                await crypto.subtle.decrypt(
+                    {
+                        name:
+                            "AES-GCM",
+
+                        iv:
+                            nonce,
+
+                        additionalData:
+                            aad,
+
+                        tagLength:
+                            128
+                    },
+
+                    key,
+
+                    encrypted
+                )
+            );
+
+
+        throwIfAborted(
+            signal
+        );
+
+
+        if (
+            plaintext.length !==
+            plaintextLength
+        ) {
+
+            throw new Error(
+                "Invalid decrypted chunk"
+            );
+        }
+
+
+        await writer.write(
+            plaintext
+        );
+
+
+        plaintextWritten +=
+            plaintext.length;
+
+
+        offset +=
+            ciphertextLength;
+
+
+        const percentage =
+            header.fileSize > 0
+                ? (
+                    plaintextWritten /
+                    header.fileSize
+                ) *
+                100
+                : 100;
+
+
+        setProgress(
+            Math.max(
+                8,
+                percentage
+            ),
+            `Decrypting ${formatBytes(plaintextWritten)} / ${formatBytes(header.fileSize)}`
+        );
+
+
+        await nextFrame();
+    }
+
+
+    if (
+        plaintextWritten !==
+        header.fileSize
+    ) {
+
+        throw new Error(
+            "Decrypted file size does not match package metadata"
+        );
+    }
+
+
+    if (
+        offset !==
+        packageFile.size
+    ) {
+
+        throw new Error(
+            "Unexpected data after SecureDrop package"
+        );
+    }
+}
+
+
+/* =========================================================
+   LEGACY V1 DECRYPTION
+
+   Old one-shot SecureDrop packages remain supported.
+========================================================= */
+
+async function decryptV1(
+    packageFile,
+    packageInfo,
+    signal,
+    writer
+) {
+
+    const header =
+        validateV1Header(
+            packageInfo.header
+        );
+
+
+    setProgress(
+        10,
+        "Reading legacy SecureDrop package..."
+    );
+
+
+    const entirePackage =
+        new Uint8Array(
+            await packageFile.arrayBuffer()
+        );
+
+
+    throwIfAborted(
+        signal
+    );
+
+
+    const ciphertext =
+        entirePackage.slice(
+            8 +
+            packageInfo.headerLength
+        );
+
+
+    if (
+        ciphertext.length ===
+        0
+    ) {
+
+        throw new Error(
+            "Package contains no encrypted data"
+        );
+    }
+
+
+    const salt =
+        base64ToBytes(
+            header.salt
+        );
+
+
+    const nonce =
+        base64ToBytes(
+            header.nonce
+        );
+
+
+    setProgress(
+        20,
+        "Deriving encryption key..."
+    );
+
+
+    const keyBytes =
+        await deriveKey(
+            password.value,
+            salt,
+            header
+        );
+
+
+    throwIfAborted(
+        signal
+    );
+
+
+    const key =
+        await crypto.subtle.importKey(
+            "raw",
+            keyBytes,
+            {
+                name:
+                    "AES-GCM"
+            },
+            false,
+            [
+                "decrypt"
+            ]
+        );
+
+
+    setProgress(
+        60,
+        "Decrypting file..."
+    );
+
+
+    const plaintext =
+        new Uint8Array(
+            await crypto.subtle.decrypt(
+                {
+                    name:
+                        "AES-GCM",
+
+                    iv:
+                        nonce,
+
+                    additionalData:
+                        packageInfo.headerBytes,
+
+                    tagLength:
+                        128
+                },
+
+                key,
+
+                ciphertext
+            )
+        );
+
+
+    throwIfAborted(
+        signal
+    );
+
+
+    await writer.write(
+        plaintext
+    );
+
+
+    setProgress(
+        100,
+        "Decryption complete"
+    );
 }
 
 
@@ -1708,7 +1914,8 @@ async function decryptFiles() {
 
 async function deriveKey(
     passphrase,
-    salt
+    salt,
+    parameters = FORMAT
 ) {
 
     const result =
@@ -1721,13 +1928,13 @@ async function deriveKey(
                 salt,
 
             time:
-                FORMAT.iterations,
+                parameters.iterations,
 
             mem:
-                FORMAT.memory,
+                parameters.memory,
 
             parallelism:
-                FORMAT.parallelism,
+                parameters.parallelism,
 
             hashLen:
                 32,
@@ -1745,40 +1952,23 @@ async function deriveKey(
 
 
 /* =========================================================
-   PACKAGE CREATION
+   PACKAGE PREFIX
 ========================================================= */
 
-function createPackage(
-    headerBytes,
-    ciphertext
+function createPackagePrefix(
+    headerBytes
 ) {
-
-    /*
-     * Package format:
-     *
-     * 4 bytes   magic
-     * 4 bytes   header length
-     * N bytes   JSON header
-     * remaining ciphertext
-     */
-
 
     const magic =
         new TextEncoder().encode(
-            "SDRP"
+            FORMAT.magic
         );
-
-
-    const totalLength =
-        4 +
-        4 +
-        headerBytes.length +
-        ciphertext.length;
 
 
     const buffer =
         new ArrayBuffer(
-            totalLength
+            8 +
+            headerBytes.length
         );
 
 
@@ -1794,52 +1984,22 @@ function createPackage(
         );
 
 
-    let offset =
-        0;
-
-
-    /* Magic */
-
     output.set(
         magic,
-        offset
+        0
     );
 
 
-    offset +=
-        4;
-
-
-    /* Header length */
-
     view.setUint32(
-        offset,
+        4,
         headerBytes.length,
         false
     );
 
 
-    offset +=
-        4;
-
-
-    /* Header */
-
     output.set(
         headerBytes,
-        offset
-    );
-
-
-    offset +=
-        headerBytes.length;
-
-
-    /* Ciphertext */
-
-    output.set(
-        ciphertext,
-        offset
+        8
     );
 
 
@@ -1848,15 +2008,26 @@ function createPackage(
 
 
 /* =========================================================
-   PACKAGE PARSING
+   PACKAGE HEADER
 ========================================================= */
 
-function parsePackage(
-    bytes
+async function readPackageHeader(
+    file
 ) {
 
+    const prefix =
+        new Uint8Array(
+            await file
+                .slice(
+                    0,
+                    8
+                )
+                .arrayBuffer()
+        );
+
+
     if (
-        bytes.length <
+        prefix.length !==
         8
     ) {
 
@@ -1866,15 +2037,9 @@ function parsePackage(
     }
 
 
-    const decoder =
-        new TextDecoder();
-
-
-    /* Magic */
-
     const magic =
-        decoder.decode(
-            bytes.slice(
+        new TextDecoder().decode(
+            prefix.slice(
                 0,
                 4
             )
@@ -1883,7 +2048,7 @@ function parsePackage(
 
     if (
         magic !==
-        "SDRP"
+        FORMAT.magic
     ) {
 
         throw new Error(
@@ -1892,13 +2057,11 @@ function parsePackage(
     }
 
 
-    /* View */
-
     const view =
         new DataView(
-            bytes.buffer,
-            bytes.byteOffset,
-            bytes.byteLength
+            prefix.buffer,
+            prefix.byteOffset,
+            prefix.byteLength
         );
 
 
@@ -1909,12 +2072,10 @@ function parsePackage(
         );
 
 
-    /* Validate */
-
     if (
         headerLength <= 0 ||
         headerLength >
-            bytes.length - 8
+            MAX_HEADER_SIZE
     ) {
 
         throw new Error(
@@ -1923,44 +2084,28 @@ function parsePackage(
     }
 
 
-    const headerStart =
-        8;
-
-
-    const headerEnd =
-        headerStart +
-        headerLength;
-
-
-    /* Header */
-
     const headerBytes =
-        bytes.slice(
-            headerStart,
-            headerEnd
-        );
-
-
-    /* Ciphertext */
-
-    const ciphertext =
-        bytes.slice(
-            headerEnd
+        new Uint8Array(
+            await file
+                .slice(
+                    8,
+                    8 +
+                    headerLength
+                )
+                .arrayBuffer()
         );
 
 
     if (
-        ciphertext.length ===
-        0
+        headerBytes.length !==
+        headerLength
     ) {
 
         throw new Error(
-            "Package contains no encrypted data"
+            "SecureDrop package is truncated"
         );
     }
 
-
-    /* JSON */
 
     let header;
 
@@ -1982,35 +2127,559 @@ function parsePackage(
     }
 
 
+    if (
+        !header ||
+        typeof header !==
+        "object"
+    ) {
+
+        throw new Error(
+            "Invalid package metadata"
+        );
+    }
+
+
     return {
         header,
         headerBytes,
-        ciphertext
+        headerLength
     };
 }
 
 
 /* =========================================================
-   DOWNLOAD
+   HEADER VALIDATION
 ========================================================= */
 
-function downloadFile(
-    bytes,
-    filename,
-    mimeType
+function validateV2Header(
+    header
 ) {
 
-    const blob =
-        new Blob(
-            [
-                bytes
-            ],
-            {
-                type:
-                    mimeType
-            }
+    if (
+        header.magic !==
+        FORMAT.magic
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop package"
+        );
+    }
+
+
+    if (
+        header.version !==
+        FORMAT.version
+    ) {
+
+        throw new Error(
+            "Unsupported SecureDrop version"
+        );
+    }
+
+
+    if (
+        header.format !==
+        "chunked"
+    ) {
+
+        throw new Error(
+            "Unsupported SecureDrop format"
+        );
+    }
+
+
+    if (
+        header.cipher !==
+        FORMAT.cipher
+    ) {
+
+        throw new Error(
+            "Unsupported encryption algorithm"
+        );
+    }
+
+
+    if (
+        header.kdf !==
+        FORMAT.kdf
+    ) {
+
+        throw new Error(
+            "Unsupported key derivation function"
+        );
+    }
+
+
+    if (
+        !Number.isSafeInteger(
+            header.chunkSize
+        ) ||
+        header.chunkSize <=
+            0 ||
+        header.chunkSize >
+            64 * 1024 * 1024
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop chunk size"
+        );
+    }
+
+
+    if (
+        !Number.isSafeInteger(
+            header.fileSize
+        ) ||
+        header.fileSize <
+            0
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop file size"
+        );
+    }
+
+
+    if (
+        !Number.isSafeInteger(
+            header.chunkCount
+        ) ||
+        header.chunkCount <
+            0
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop chunk count"
+        );
+    }
+
+
+    const expectedChunkCount =
+        header.fileSize === 0
+            ? 0
+            : Math.ceil(
+                header.fileSize /
+                header.chunkSize
+            );
+
+
+    if (
+        header.chunkCount !==
+        expectedChunkCount
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop chunk count"
+        );
+    }
+
+
+    if (
+        !Number.isSafeInteger(
+            header.memory
+        ) ||
+        header.memory <= 0 ||
+
+        !Number.isSafeInteger(
+            header.iterations
+        ) ||
+        header.iterations <= 0 ||
+
+        !Number.isSafeInteger(
+            header.parallelism
+        ) ||
+        header.parallelism <= 0
+    ) {
+
+        throw new Error(
+            "Invalid KDF parameters"
+        );
+    }
+
+
+    const salt =
+        base64ToBytes(
+            header.salt
         );
 
+
+    const noncePrefix =
+        base64ToBytes(
+            header.noncePrefix
+        );
+
+
+    if (
+        salt.length !==
+        FORMAT.saltLength
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop salt"
+        );
+    }
+
+
+    if (
+        noncePrefix.length !==
+        FORMAT.noncePrefixLength
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop nonce prefix"
+        );
+    }
+
+
+    if (
+        typeof header.filename !==
+        "string" ||
+        header.filename.length ===
+        0
+    ) {
+
+        throw new Error(
+            "Invalid original filename"
+        );
+    }
+
+
+    return header;
+}
+
+
+function validateV1Header(
+    header
+) {
+
+    if (
+        header.magic !==
+        FORMAT.magic
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop package"
+        );
+    }
+
+
+    if (
+        header.version !==
+        FORMAT.legacyVersion
+    ) {
+
+        throw new Error(
+            "Unsupported SecureDrop version"
+        );
+    }
+
+
+    if (
+        header.cipher !==
+        FORMAT.cipher
+    ) {
+
+        throw new Error(
+            "Unsupported encryption algorithm"
+        );
+    }
+
+
+    if (
+        header.kdf !==
+        FORMAT.kdf
+    ) {
+
+        throw new Error(
+            "Unsupported key derivation function"
+        );
+    }
+
+
+    if (
+        !Number.isSafeInteger(
+            header.memory
+        ) ||
+        header.memory <= 0 ||
+
+        !Number.isSafeInteger(
+            header.iterations
+        ) ||
+        header.iterations <= 0 ||
+
+        !Number.isSafeInteger(
+            header.parallelism
+        ) ||
+        header.parallelism <= 0
+    ) {
+
+        throw new Error(
+            "Invalid KDF parameters"
+        );
+    }
+
+
+    const salt =
+        base64ToBytes(
+            header.salt
+        );
+
+
+    const nonce =
+        base64ToBytes(
+            header.nonce
+        );
+
+
+    if (
+        salt.length !==
+        16
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop salt"
+        );
+    }
+
+
+    if (
+        nonce.length !==
+        12
+    ) {
+
+        throw new Error(
+            "Invalid SecureDrop nonce"
+        );
+    }
+
+
+    return header;
+}
+
+
+function validateHeaderSize(
+    headerBytes
+) {
+
+    if (
+        headerBytes.length <=
+        0 ||
+        headerBytes.length >
+        MAX_HEADER_SIZE
+    ) {
+
+        throw new Error(
+            "SecureDrop metadata is too large"
+        );
+    }
+}
+
+
+/* =========================================================
+   CHUNK NONCE
+========================================================= */
+
+function makeChunkNonce(
+    noncePrefix,
+    chunkIndex
+) {
+
+    const nonce =
+        new Uint8Array(
+            12
+        );
+
+
+    nonce.set(
+        noncePrefix,
+        0
+    );
+
+
+    const view =
+        new DataView(
+            nonce.buffer
+        );
+
+
+    view.setBigUint64(
+        4,
+        BigInt(chunkIndex),
+        false
+    );
+
+
+    return nonce;
+}
+
+
+/* =========================================================
+   CHUNK AAD
+========================================================= */
+
+function makeChunkAAD(
+    headerBytes,
+    chunkIndex
+) {
+
+    const aad =
+        new Uint8Array(
+            headerBytes.length +
+            8
+        );
+
+
+    aad.set(
+        headerBytes,
+        0
+    );
+
+
+    const view =
+        new DataView(
+            aad.buffer
+        );
+
+
+    view.setBigUint64(
+        headerBytes.length,
+        BigInt(chunkIndex),
+        false
+    );
+
+
+    return aad;
+}
+
+
+/* =========================================================
+   OUTPUT WRITER
+========================================================= */
+
+async function createOutputWriter(
+    suggestedName
+) {
+
+    /*
+     * Preferred path:
+     * File System Access API.
+     */
+
+    if (
+        typeof window.showSaveFilePicker ===
+        "function"
+    ) {
+
+        const handle =
+            await window.showSaveFilePicker({
+
+                suggestedName,
+
+                types: [
+                    {
+                        description:
+                            "SecureDrop file",
+
+                        accept: {
+                            "application/octet-stream": [
+                                ".sdrop"
+                            ]
+                        }
+                    }
+                ]
+            });
+
+
+        const writable =
+            await handle.createWritable();
+
+
+        return {
+
+            write:
+                (chunk) =>
+                    writable.write(
+                        chunk
+                    ),
+
+            close:
+                () =>
+                    writable.close(),
+
+            abort:
+                async (reason) => {
+                    try {
+                        await writable.abort(
+                            reason
+                        );
+                    } catch {
+                        /*
+                         * Ignore cleanup errors.
+                         */
+                    }
+                }
+        };
+    }
+
+
+    /*
+     * Fallback for browsers without
+     * File System Access API.
+     *
+     * This path stores chunks in memory
+     * until the final Blob is created.
+     */
+
+    const chunks = [];
+
+
+    return {
+
+        write:
+            async (chunk) => {
+                chunks.push(
+                    chunk
+                );
+            },
+
+        close:
+            async () => {
+
+                const blob =
+                    new Blob(
+                        chunks,
+                        {
+                            type:
+                                "application/octet-stream"
+                        }
+                    );
+
+
+                downloadBlob(
+                    blob,
+                    suggestedName
+                );
+
+
+                chunks.length = 0;
+            },
+
+        abort:
+            async () => {
+                chunks.length = 0;
+            }
+    };
+}
+
+
+/* =========================================================
+   BLOB DOWNLOAD
+========================================================= */
+
+function downloadBlob(
+    blob,
+    filename
+) {
 
     const url =
         URL.createObjectURL(
@@ -2026,7 +2695,6 @@ function downloadFile(
 
     link.href =
         url;
-
 
     link.download =
         filename;
@@ -2045,13 +2713,32 @@ function downloadFile(
 
     setTimeout(
         () => {
-
             URL.revokeObjectURL(
                 url
             );
-
         },
         1000
+    );
+}
+
+
+/* =========================================================
+   ENCRYPTED FILENAME
+========================================================= */
+
+function buildEncryptedFilename(
+    filename
+) {
+
+    const cleanName =
+        filename.replace(
+            /\.sdrop$/i,
+            ""
+        );
+
+
+    return (
+        `${cleanName || "encrypted-file"}.sdrop`
     );
 }
 
@@ -2064,9 +2751,7 @@ function bytesToBase64(
     bytes
 ) {
 
-    let binary =
-        "";
-
+    let binary = "";
 
     const chunkSize =
         0x8000;
@@ -2144,8 +2829,46 @@ function base64ToBytes(
 
 
 /* =========================================================
-   STATUS
+   ABORT / UTILITIES
 ========================================================= */
+
+function throwIfAborted(
+    signal
+) {
+
+    if (
+        signal.aborted
+    ) {
+
+        throw new DOMException(
+            "Operation cancelled",
+            "AbortError"
+        );
+    }
+}
+
+
+function isAbortError(
+    error
+) {
+
+    return (
+        error?.name ===
+        "AbortError"
+    );
+}
+
+
+function nextFrame() {
+
+    return new Promise(
+        (resolve) =>
+            requestAnimationFrame(
+                resolve
+            )
+    );
+}
+
 
 function setStatus(
     message
@@ -2157,7 +2880,7 @@ function setStatus(
 
 
 /* =========================================================
-   DYNAMIC PARTICLES
+   AMBIENT PARTICLES
 ========================================================= */
 
 function createAmbientParticles() {
@@ -2205,131 +2928,63 @@ function createAmbientParticles() {
             "ambient-particle";
 
 
-        const size =
-            Math.random() *
-            3 +
-            2;
+        const properties = {
+
+            "--size":
+                `${Math.random() * 3 + 2}px`,
+
+            "--x":
+                `${Math.random() * 100}%`,
+
+            "--y":
+                `${Math.random() * 100}%`,
+
+            "--move-x":
+                `${(
+                    Math.random() - 0.5
+                ) * 160}px`,
+
+            "--move-y":
+                `${(
+                    Math.random() - 0.5
+                ) * 160}px`,
+
+            "--move-x-end":
+                `${(
+                    Math.random() - 0.5
+                ) * 220}px`,
+
+            "--move-y-end":
+                `${(
+                    Math.random() - 0.5
+                ) * 220}px`,
+
+            "--duration":
+                `${8 + Math.random() * 10}s`,
+
+            "--delay":
+                `${Math.random() * -12}s`,
+
+            "--particle-color":
+                colors[
+                    Math.floor(
+                        Math.random() *
+                        colors.length
+                    )
+                ]
+        };
 
 
-        const x =
-            Math.random() *
-            100;
+        Object.entries(
+            properties
+        ).forEach(
+            ([key, value]) => {
 
-
-        const y =
-            Math.random() *
-            100;
-
-
-        const moveX =
-            (
-                Math.random() -
-                0.5
-            ) *
-            160;
-
-
-        const moveY =
-            (
-                Math.random() -
-                0.5
-            ) *
-            160;
-
-
-        const endX =
-            (
-                Math.random() -
-                0.5
-            ) *
-            220;
-
-
-        const endY =
-            (
-                Math.random() -
-                0.5
-            ) *
-            220;
-
-
-        const duration =
-            8 +
-            Math.random() *
-            10;
-
-
-        const delay =
-            Math.random() *
-            -12;
-
-
-        const color =
-            colors[
-                Math.floor(
-                    Math.random() *
-                    colors.length
-                )
-            ];
-
-
-        particle.style.setProperty(
-            "--size",
-            `${size}px`
-        );
-
-
-        particle.style.setProperty(
-            "--x",
-            `${x}%`
-        );
-
-
-        particle.style.setProperty(
-            "--y",
-            `${y}%`
-        );
-
-
-        particle.style.setProperty(
-            "--move-x",
-            `${moveX}px`
-        );
-
-
-        particle.style.setProperty(
-            "--move-y",
-            `${moveY}px`
-        );
-
-
-        particle.style.setProperty(
-            "--move-x-end",
-            `${endX}px`
-        );
-
-
-        particle.style.setProperty(
-            "--move-y-end",
-            `${endY}px`
-        );
-
-
-        particle.style.setProperty(
-            "--duration",
-            `${duration}s`
-        );
-
-
-        particle.style.setProperty(
-            "--delay",
-            `${delay}s`
-        );
-
-
-        particle.style.setProperty(
-            "--particle-color",
-            color
+                particle.style.setProperty(
+                    key,
+                    value
+                );
+            }
         );
 
 
@@ -2349,7 +3004,7 @@ createAmbientParticles();
 
 
 /* =========================================================
-   MOUSE PARALLAX
+   BACKGROUND PARALLAX
 ========================================================= */
 
 if (
@@ -2426,19 +3081,11 @@ if (
    STARTUP
 ========================================================= */
 
-/*
- * Build normal UI.
- */
-
 updateUI();
 
-
 /*
- * IMPORTANT:
- *
- * Progress starts hidden.
- * It becomes visible only when
- * encryption or decryption starts.
+ * Critical:
+ * Hide progress until an operation actually starts.
  */
 
 resetProgress();

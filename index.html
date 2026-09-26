@@ -1,84 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <meta
-        name="description"
-        content="SecureDrop private file encryption"
-    >
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SecureDrop private file encryption">
     <title>SecureDrop</title>
 
-    <link
-        rel="stylesheet"
-        href="style.css"
-    >
-
-    <link
-        rel="manifest"
-        href="manifest.json"
-    >
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
 </head>
-
 
 <body>
 
-    <!-- =====================================================
-         DYNAMIC BACKGROUND
-    ====================================================== -->
-
-    <div
-        class="ambient-background"
-        aria-hidden="true"
-    >
-
+    <div class="ambient-background" aria-hidden="true">
         <div class="ambient-orb orb-one"></div>
-
         <div class="ambient-orb orb-two"></div>
-
         <div class="ambient-orb orb-three"></div>
-
         <div class="ambient-grid"></div>
-
-        <div
-            id="ambientParticles"
-            class="ambient-particles"
-        ></div>
-
+        <div id="ambientParticles" class="ambient-particles"></div>
     </div>
-
-
-    <!-- =====================================================
-         APPLICATION
-    ====================================================== -->
 
     <div class="app">
 
-        <!-- =================================================
-             HEADER
-        ================================================== -->
-
         <header class="header">
-
             <div class="brand">
-
-                <h1 class="brand-title">
-                    SecureDrop
-                </h1>
-
-                <p class="brand-subtitle">
-                    Private file encryption.
-                </p>
-
+                <h1 class="brand-title">SecureDrop</h1>
+                <p class="brand-subtitle">Private file encryption.</p>
             </div>
-
 
             <button
                 id="themeToggle"
@@ -88,20 +36,13 @@
             >
                 ☼
             </button>
-
         </header>
-
-
-        <!-- =================================================
-             MODE SWITCH
-        ================================================== -->
 
         <div
             class="mode-switch"
             role="tablist"
             aria-label="Operation mode"
         >
-
             <button
                 id="encryptMode"
                 class="mode-button active"
@@ -112,7 +53,6 @@
                 Encrypt
             </button>
 
-
             <button
                 id="decryptMode"
                 class="mode-button"
@@ -122,50 +62,21 @@
             >
                 Decrypt
             </button>
-
         </div>
-
-
-        <!-- =================================================
-             MAIN CARD
-        ================================================== -->
 
         <main class="card">
 
-            <!-- =============================================
-                 DROP ZONE
-            ============================================== -->
-
-            <div
-                id="dropZone"
-                class="drop-zone"
-            >
-
+            <div id="dropZone" class="drop-zone">
                 <div class="drop-content">
+                    <div class="drop-icon" aria-hidden="true">+</div>
 
-                    <div
-                        class="drop-icon"
-                        aria-hidden="true"
-                    >
-                        +
-                    </div>
-
-
-                    <h2
-                        id="dropTitle"
-                        class="drop-title"
-                    >
+                    <h2 id="dropTitle" class="drop-title">
                         Drop files here
                     </h2>
 
-
-                    <p
-                        id="dropSubtitle"
-                        class="drop-subtitle"
-                    >
-                        or click to choose files from your device
+                    <p id="dropSubtitle" class="drop-subtitle">
+                        or click to choose a file from your device
                     </p>
-
 
                     <button
                         id="chooseFiles"
@@ -174,50 +85,23 @@
                     >
                         Choose file
                     </button>
-
                 </div>
-
             </div>
-
-
-            <!-- =============================================
-                 FILE INPUT
-            ============================================== -->
 
             <input
                 id="fileInput"
                 type="file"
             >
 
-
-            <!-- =============================================
-                 FILE LIST
-            ============================================== -->
-
-            <div
-                id="fileList"
-                class="file-list"
-            ></div>
-
-
-            <!-- =============================================
-                 PASSWORD
-            ============================================== -->
+            <div id="fileList" class="file-list"></div>
 
             <section class="form-section">
-
                 <div class="field">
-
-                    <label
-                        class="field-label"
-                        for="password"
-                    >
+                    <label class="field-label" for="password">
                         Password
                     </label>
 
-
                     <div class="input-wrapper">
-
                         <input
                             id="password"
                             type="password"
@@ -226,7 +110,6 @@
                             spellcheck="false"
                         >
 
-
                         <button
                             id="showPassword"
                             class="show-password"
@@ -234,26 +117,13 @@
                         >
                             Show
                         </button>
-
                     </div>
-
                 </div>
 
-
-                <!-- Confirm password -->
-
-                <div
-                    id="confirmField"
-                    class="field"
-                >
-
-                    <label
-                        class="field-label"
-                        for="confirmPassword"
-                    >
+                <div id="confirmField" class="field">
+                    <label class="field-label" for="confirmPassword">
                         Confirm password
                     </label>
-
 
                     <input
                         id="confirmPassword"
@@ -262,15 +132,8 @@
                         autocomplete="new-password"
                         spellcheck="false"
                     >
-
                 </div>
-
             </section>
-
-
-            <!-- =============================================
-                 PROGRESS
-            ============================================== -->
 
             <section
                 id="progressSection"
@@ -278,49 +141,30 @@
                 hidden
                 aria-live="polite"
             >
-
                 <div class="progress-track">
-
-                    <div
-                        id="progressBar"
-                        class="progress-bar"
-                    ></div>
-
+                    <div id="progressBar" class="progress-bar"></div>
                 </div>
-
 
                 <div class="progress-text">
-
-                    <span id="status">
-                        Ready
-                    </span>
-
-
-                    <span id="progressPercent">
-                        0%
-                    </span>
-
+                    <span id="status">Ready</span>
+                    <span id="progressPercent">0%</span>
                 </div>
-
             </section>
 
-
-            <!-- =============================================
-                 ACTIONS
-            ============================================== -->
-
             <div class="action-row">
-
                 <div class="status">
-
-                    <span id="fileStatus">
-                        No files selected
-                    </span>
-
+                    <span id="fileStatus">No files selected</span>
                 </div>
 
-
                 <div class="action-group">
+                    <button
+                        id="cancelButton"
+                        class="secondary-button cancel-button"
+                        type="button"
+                        hidden
+                    >
+                        Cancel
+                    </button>
 
                     <button
                         id="clearButton"
@@ -330,7 +174,6 @@
                         Clear
                     </button>
 
-
                     <button
                         id="actionButton"
                         class="primary-button"
@@ -338,32 +181,13 @@
                     >
                         Encrypt
                     </button>
-
                 </div>
-
             </div>
-
         </main>
-
     </div>
 
-
-    <!-- =====================================================
-         ARGON2
-    ====================================================== -->
-
     <script src="https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js"></script>
-
-
-    <!-- =====================================================
-         APPLICATION JS
-    ====================================================== -->
-
-    <script
-        type="module"
-        src="app.js"
-    ></script>
+    <script type="module" src="app.js"></script>
 
 </body>
-
 </html>
