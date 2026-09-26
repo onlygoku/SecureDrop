@@ -1,3 +1,7 @@
+/* =========================================================
+   DOM HELPERS
+========================================================= */
+
 const $ = (id) => document.getElementById(id);
 
 
@@ -6,6 +10,7 @@ const $ = (id) => document.getElementById(id);
 ========================================================= */
 
 const dropZone = $("dropZone");
+
 const dropTitle = $("dropTitle");
 const dropSubtitle = $("dropSubtitle");
 
@@ -26,49 +31,76 @@ const actionButton = $("actionButton");
 
 const themeToggle = $("themeToggle");
 
-const progressSection = $("progressSection");
-const status = $("status");
-const progressBar = $("progressBar");
-const progressPercent = $("progressPercent");
+const progressSection =
+    $("progressSection");
 
-const fileStatus = $("fileStatus");
+const progressBar =
+    $("progressBar");
+
+const progressPercent =
+    $("progressPercent");
+
+const status =
+    $("status");
+
+const fileStatus =
+    $("fileStatus");
+
+const ambientBackground =
+    document.querySelector(
+        ".ambient-background"
+    );
 
 
 /* =========================================================
-   STATE
+   APPLICATION STATE
 ========================================================= */
 
 let selectedFiles = [];
+
 let currentMode = "encrypt";
+
 let operationRunning = false;
 
 
 /* =========================================================
-   FORMAT
+   SECUREDROP FORMAT
 ========================================================= */
 
 const FORMAT = {
+
     magic: "SDRP",
+
     version: 1,
 
     cipher: "AES-256-GCM",
+
     kdf: "Argon2id",
 
     memory: 65536,
+
     iterations: 3,
+
     parallelism: 2,
 
     saltLength: 16,
+
     nonceLength: 12
+
 };
 
 
 /* =========================================================
-   INITIAL STATE
+   INITIAL UI
 ========================================================= */
 
 function updateUI() {
-    const decrypting = currentMode === "decrypt";
+
+    const decrypting =
+        currentMode === "decrypt";
+
+
+    /* Mode buttons */
 
     encryptMode.classList.toggle(
         "active",
@@ -80,27 +112,70 @@ function updateUI() {
         decrypting
     );
 
+
+    encryptMode.setAttribute(
+        "aria-selected",
+        String(!decrypting)
+    );
+
+    decryptMode.setAttribute(
+        "aria-selected",
+        String(decrypting)
+    );
+
+
+    /* Action */
+
     actionButton.textContent =
-        decrypting ? "Decrypt" : "Encrypt";
+        decrypting
+            ? "Decrypt"
+            : "Encrypt";
+
+
+    /* Confirmation */
 
     confirmField.style.display =
-        decrypting ? "none" : "block";
+        decrypting
+            ? "none"
+            : "block";
+
+
+    /* File picker */
+
+    fileInput.accept =
+        decrypting
+            ? ".sdrop"
+            : "";
+
+
+    /* Drop zone */
 
     if (decrypting) {
+
         dropTitle.textContent =
             "Drop a .sdrop package here";
 
         dropSubtitle.textContent =
             "or click to choose an encrypted package";
+
+        chooseFiles.textContent =
+            "Choose package";
+
     } else {
+
         dropTitle.textContent =
             "Drop files here";
 
         dropSubtitle.textContent =
             "or click to choose files from your device";
+
+        chooseFiles.textContent =
+            "Choose file";
     }
 
+
     renderFiles();
+
     updateFileStatus();
 }
 
@@ -110,37 +185,62 @@ function updateUI() {
 ========================================================= */
 
 const savedTheme =
-    localStorage.getItem("securedrop-theme");
+    localStorage.getItem(
+        "securedrop-theme"
+    );
+
 
 if (savedTheme === "dark") {
-    document.documentElement.dataset.theme = "dark";
-    themeToggle.textContent = "☀";
+
+    document.documentElement.dataset.theme =
+        "dark";
+
+    themeToggle.textContent =
+        "☀";
+
+} else {
+
+    themeToggle.textContent =
+        "☼";
 }
 
 
 themeToggle.addEventListener(
     "click",
     () => {
+
         if (operationRunning) {
             return;
         }
 
+
         const dark =
-            document.documentElement.dataset.theme === "dark";
+            document.documentElement.dataset.theme ===
+            "dark";
+
 
         if (dark) {
-            delete document.documentElement.dataset.theme;
 
-            themeToggle.textContent = "☼";
+            delete document
+                .documentElement
+                .dataset
+                .theme;
+
+            themeToggle.textContent =
+                "☼";
 
             localStorage.setItem(
                 "securedrop-theme",
                 "light"
             );
-        } else {
-            document.documentElement.dataset.theme = "dark";
 
-            themeToggle.textContent = "☀";
+        } else {
+
+            document.documentElement.dataset.theme =
+                "dark";
+
+            themeToggle.textContent =
+                "☀";
 
             localStorage.setItem(
                 "securedrop-theme",
@@ -152,24 +252,32 @@ themeToggle.addEventListener(
 
 
 /* =========================================================
-   MODE
+   MODE SWITCHING
 ========================================================= */
 
 encryptMode.addEventListener(
     "click",
     () => {
+
         if (operationRunning) {
             return;
         }
+
 
         currentMode = "encrypt";
 
         selectedFiles = [];
 
+
         password.value = "";
         confirmPassword.value = "";
 
+
+        fileInput.value = "";
+
+
         resetProgress();
+
         updateUI();
     }
 );
@@ -178,18 +286,26 @@ encryptMode.addEventListener(
 decryptMode.addEventListener(
     "click",
     () => {
+
         if (operationRunning) {
             return;
         }
+
 
         currentMode = "decrypt";
 
         selectedFiles = [];
 
+
         password.value = "";
         confirmPassword.value = "";
 
+
+        fileInput.value = "";
+
+
         resetProgress();
+
         updateUI();
     }
 );
@@ -202,11 +318,14 @@ decryptMode.addEventListener(
 chooseFiles.addEventListener(
     "click",
     (event) => {
+
         event.stopPropagation();
+
 
         if (operationRunning) {
             return;
         }
+
 
         fileInput.click();
     }
@@ -216,9 +335,11 @@ chooseFiles.addEventListener(
 dropZone.addEventListener(
     "click",
     () => {
+
         if (operationRunning) {
             return;
         }
+
 
         fileInput.click();
     }
@@ -228,21 +349,28 @@ dropZone.addEventListener(
 fileInput.addEventListener(
     "change",
     () => {
+
         if (operationRunning) {
             return;
         }
 
+
         const files =
-            Array.from(fileInput.files);
+            Array.from(
+                fileInput.files
+            );
+
 
         if (files.length > 0) {
             addFiles(files);
         }
 
+
         /*
-         * Reset the input so selecting the same file
-         * again still triggers the change event.
+         * Allow choosing the same file
+         * again.
          */
+
         fileInput.value = "";
     }
 );
@@ -252,34 +380,51 @@ fileInput.addEventListener(
    DRAG AND DROP
 ========================================================= */
 
-["dragenter", "dragover"].forEach(
+[
+    "dragenter",
+    "dragover"
+].forEach(
     (eventName) => {
+
         dropZone.addEventListener(
             eventName,
             (event) => {
+
                 event.preventDefault();
                 event.stopPropagation();
+
 
                 if (operationRunning) {
                     return;
                 }
 
-                dropZone.classList.add("dragover");
+
+                dropZone.classList.add(
+                    "dragover"
+                );
             }
         );
     }
 );
 
 
-["dragleave", "drop"].forEach(
+[
+    "dragleave",
+    "drop"
+].forEach(
     (eventName) => {
+
         dropZone.addEventListener(
             eventName,
             (event) => {
+
                 event.preventDefault();
                 event.stopPropagation();
 
-                dropZone.classList.remove("dragover");
+
+                dropZone.classList.remove(
+                    "dragover"
+                );
             }
         );
     }
@@ -289,14 +434,17 @@ fileInput.addEventListener(
 dropZone.addEventListener(
     "drop",
     (event) => {
+
         if (operationRunning) {
             return;
         }
+
 
         const files =
             Array.from(
                 event.dataTransfer.files
             );
+
 
         if (files.length > 0) {
             addFiles(files);
@@ -310,9 +458,11 @@ dropZone.addEventListener(
 ========================================================= */
 
 function addFiles(files) {
+
     if (operationRunning) {
         return;
     }
+
 
     if (currentMode === "decrypt") {
 
@@ -324,22 +474,24 @@ function addFiles(files) {
                         .endsWith(".sdrop")
             );
 
+
         selectedFiles =
             sdropFiles.slice(0, 1);
 
     } else {
 
         /*
-         * The current package format creates one .sdrop
-         * package from one source file.
-         *
-         * Therefore only the first file is accepted.
+         * Current SecureDrop package format
+         * stores one source file per package.
          */
+
         selectedFiles =
             files.slice(0, 1);
     }
 
+
     renderFiles();
+
     updateFileStatus();
 
     resetProgress();
@@ -347,108 +499,167 @@ function addFiles(files) {
 
 
 function renderFiles() {
-    /*
-     * Build the entire list in memory first.
-     * This reduces repeated DOM insertions.
-     */
+
     const fragment =
         document.createDocumentFragment();
+
 
     for (
         let index = 0;
         index < selectedFiles.length;
         index++
     ) {
+
         const file =
             selectedFiles[index];
 
-        const card =
-            document.createElement("div");
 
-        card.className = "file-card";
+        const card =
+            document.createElement(
+                "div"
+            );
+
+        card.className =
+            "file-card";
+
+
+        /* Icon */
 
         const icon =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        icon.className = "file-icon";
-        icon.textContent = "＋";
+        icon.className =
+            "file-icon";
+
+        icon.textContent =
+            "＋";
+
+
+        /* Information */
 
         const info =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        info.className = "file-info";
+        info.className =
+            "file-info";
+
 
         const name =
-            document.createElement("p");
+            document.createElement(
+                "p"
+            );
 
-        name.className = "file-name";
-        name.textContent = file.name;
+        name.className =
+            "file-name";
+
+        name.textContent =
+            file.name;
+
 
         const size =
-            document.createElement("p");
+            document.createElement(
+                "p"
+            );
 
-        size.className = "file-size";
+        size.className =
+            "file-size";
+
         size.textContent =
-            formatBytes(file.size);
+            formatBytes(
+                file.size
+            );
+
 
         info.appendChild(name);
         info.appendChild(size);
 
-        const removeButton =
-            document.createElement("button");
 
-        removeButton.className = "file-remove";
-        removeButton.type = "button";
+        /* Remove */
+
+        const removeButton =
+            document.createElement(
+                "button"
+            );
+
+        removeButton.className =
+            "file-remove";
+
+        removeButton.type =
+            "button";
+
+        removeButton.textContent =
+            "×";
+
         removeButton.setAttribute(
             "aria-label",
             `Remove ${file.name}`
         );
 
-        removeButton.textContent = "×";
 
         removeButton.addEventListener(
             "click",
             () => {
+
                 if (operationRunning) {
                     return;
                 }
+
 
                 selectedFiles.splice(
                     index,
                     1
                 );
 
+
                 renderFiles();
+
                 updateFileStatus();
+
                 resetProgress();
             }
         );
 
+
         card.appendChild(icon);
+
         card.appendChild(info);
+
         card.appendChild(removeButton);
+
 
         fragment.appendChild(card);
     }
 
-    fileList.replaceChildren(fragment);
+
+    fileList.replaceChildren(
+        fragment
+    );
 }
 
 
 function updateFileStatus() {
+
     if (selectedFiles.length === 0) {
+
         fileStatus.textContent =
             "No files selected";
 
         return;
     }
 
+
     if (selectedFiles.length === 1) {
+
         fileStatus.textContent =
             selectedFiles[0].name;
 
         return;
     }
+
 
     fileStatus.textContent =
         `${selectedFiles.length} files selected`;
@@ -456,9 +667,11 @@ function updateFileStatus() {
 
 
 function formatBytes(bytes) {
+
     if (bytes === 0) {
         return "0 B";
     }
+
 
     const units = [
         "B",
@@ -468,16 +681,22 @@ function formatBytes(bytes) {
         "TB"
     ];
 
+
     const i =
         Math.floor(
-            Math.log(bytes) / Math.log(1024)
+            Math.log(bytes) /
+            Math.log(1024)
         );
 
-    return `${(
-        bytes / Math.pow(1024, i)
-    ).toFixed(
-        i === 0 ? 0 : 1
-    )} ${units[i]}`;
+
+    return (
+        `${(
+            bytes /
+            Math.pow(1024, i)
+        ).toFixed(
+            i === 0 ? 0 : 1
+        )} ${units[i]}`
+    );
 }
 
 
@@ -488,17 +707,28 @@ function formatBytes(bytes) {
 showPassword.addEventListener(
     "click",
     () => {
-        const isPassword =
-            password.type === "password";
+
+        const visible =
+            password.type ===
+            "password";
+
 
         password.type =
-            isPassword ? "text" : "password";
+            visible
+                ? "text"
+                : "password";
+
 
         confirmPassword.type =
-            isPassword ? "text" : "password";
+            visible
+                ? "text"
+                : "password";
+
 
         showPassword.textContent =
-            isPassword ? "Hide" : "Show";
+            visible
+                ? "Hide"
+                : "Show";
     }
 );
 
@@ -510,18 +740,25 @@ showPassword.addEventListener(
 clearButton.addEventListener(
     "click",
     () => {
+
         if (operationRunning) {
             return;
         }
 
+
         selectedFiles = [];
 
+
         password.value = "";
+
         confirmPassword.value = "";
+
 
         fileInput.value = "";
 
+
         renderFiles();
+
         updateFileStatus();
 
         resetProgress();
@@ -537,41 +774,62 @@ function setProgress(
     value,
     message = ""
 ) {
+
     const percentage =
         Math.max(
             0,
-            Math.min(100, value)
+            Math.min(
+                100,
+                value
+            )
         );
 
+
     /*
-     * Only make the section visible when
-     * setProgress is actually called.
+     * Critical:
+     * Progress becomes visible only here.
      */
-    progressSection.hidden = false;
+
+    progressSection.hidden =
+        false;
+
 
     progressBar.style.width =
         `${percentage}%`;
 
+
     progressPercent.textContent =
         `${Math.round(percentage)}%`;
 
+
     if (message) {
-        status.textContent = message;
+
+        status.textContent =
+            message;
     }
 }
 
 
 function resetProgress() {
-    progressBar.style.width = "0%";
-    progressPercent.textContent = "0%";
-    status.textContent = "Ready";
+
+    progressBar.style.width =
+        "0%";
+
+
+    progressPercent.textContent =
+        "0%";
+
+
+    status.textContent =
+        "Ready";
+
 
     /*
-     * Critical fix:
-     * progress remains completely hidden
-     * until an operation starts.
+     * Critical startup fix.
      */
-    progressSection.hidden = true;
+
+    progressSection.hidden =
+        true;
 }
 
 
@@ -580,23 +838,51 @@ function resetProgress() {
 ========================================================= */
 
 function setBusy(busy) {
-    operationRunning = busy;
 
-    encryptMode.disabled = busy;
-    decryptMode.disabled = busy;
+    operationRunning =
+        busy;
 
-    chooseFiles.disabled = busy;
-    clearButton.disabled = busy;
-    actionButton.disabled = busy;
 
-    password.disabled = busy;
-    confirmPassword.disabled = busy;
-    showPassword.disabled = busy;
+    encryptMode.disabled =
+        busy;
 
-    themeToggle.disabled = busy;
+    decryptMode.disabled =
+        busy;
+
+
+    chooseFiles.disabled =
+        busy;
+
+    clearButton.disabled =
+        busy;
+
+    actionButton.disabled =
+        busy;
+
+
+    password.disabled =
+        busy;
+
+    confirmPassword.disabled =
+        busy;
+
+    showPassword.disabled =
+        busy;
+
+
+    themeToggle.disabled =
+        busy;
+
+
+    /*
+     * Disable interaction with
+     * the drop zone.
+     */
 
     dropZone.style.pointerEvents =
-        busy ? "none" : "";
+        busy
+            ? "none"
+            : "";
 }
 
 
@@ -607,13 +893,18 @@ function setBusy(busy) {
 actionButton.addEventListener(
     "click",
     async () => {
+
         if (operationRunning) {
             return;
         }
 
+
         if (currentMode === "encrypt") {
+
             await encryptFiles();
+
         } else {
+
             await decryptFiles();
         }
     }
@@ -625,86 +916,133 @@ actionButton.addEventListener(
 ========================================================= */
 
 async function encryptFiles() {
+
     if (operationRunning) {
         return;
     }
 
+
     try {
+
+        /* Validate file */
+
         if (selectedFiles.length === 0) {
-            setStatus("Choose a file first");
+
+            setStatus(
+                "Choose a file first"
+            );
+
             return;
         }
+
+
+        /* Validate password */
 
         if (!password.value) {
-            setStatus("Enter a password");
+
+            setStatus(
+                "Enter a password"
+            );
+
             password.focus();
+
             return;
         }
 
+
+        /* Validate password length */
+
         if (password.value.length < 8) {
+
             setStatus(
                 "Password must be at least 8 characters"
             );
 
             password.focus();
+
             return;
         }
+
+
+        /* Confirm password */
 
         if (
             password.value !==
             confirmPassword.value
         ) {
+
             setStatus(
                 "Passwords do not match"
             );
 
             confirmPassword.focus();
+
             return;
         }
 
+
+        /* Argon2 */
+
         if (!window.argon2) {
+
             throw new Error(
                 "Argon2 failed to load"
             );
         }
 
+
         setBusy(true);
 
+
         /*
-         * Give the browser one rendering opportunity
-         * before starting heavy work.
+         * Show preparation state
+         * only after user starts encryption.
          */
+
         setProgress(
             0,
             "Preparing..."
         );
 
+
+        /*
+         * Allow browser to render
+         * the progress state.
+         */
+
         await new Promise(
             (resolve) =>
-                requestAnimationFrame(resolve)
+                requestAnimationFrame(
+                    resolve
+                )
         );
+
 
         const file =
             selectedFiles[0];
+
+
+        /* Read file */
 
         setProgress(
             5,
             "Reading file..."
         );
 
-        /*
-         * Current architecture loads the complete
-         * source file into memory.
-         */
+
         const plaintext =
             new Uint8Array(
                 await file.arrayBuffer()
             );
 
+
+        /* Generate salt */
+
         setProgress(
             15,
             "Generating encryption parameters..."
         );
+
 
         const salt =
             crypto.getRandomValues(
@@ -713,6 +1051,9 @@ async function encryptFiles() {
                 )
             );
 
+
+        /* Generate nonce */
+
         const nonce =
             crypto.getRandomValues(
                 new Uint8Array(
@@ -720,10 +1061,14 @@ async function encryptFiles() {
                 )
             );
 
+
+        /* Derive key */
+
         setProgress(
             25,
             "Deriving encryption key..."
         );
+
 
         const keyBytes =
             await deriveKey(
@@ -731,10 +1076,14 @@ async function encryptFiles() {
                 salt
             );
 
+
+        /* Import AES key */
+
         setProgress(
-            60,
-            "Encrypting file..."
+            45,
+            "Preparing AES-256-GCM..."
         );
+
 
         const key =
             await crypto.subtle.importKey(
@@ -747,55 +1096,107 @@ async function encryptFiles() {
                 ["encrypt"]
             );
 
+
+        /* Build metadata */
+
         const header = {
-            magic: FORMAT.magic,
-            version: FORMAT.version,
 
-            cipher: FORMAT.cipher,
-            kdf: FORMAT.kdf,
+            magic:
+                FORMAT.magic,
 
-            memory: FORMAT.memory,
-            iterations: FORMAT.iterations,
-            parallelism: FORMAT.parallelism,
+            version:
+                FORMAT.version,
 
-            salt: bytesToBase64(salt),
-            nonce: bytesToBase64(nonce),
+            cipher:
+                FORMAT.cipher,
 
-            filename: file.name,
-            size: file.size,
+            kdf:
+                FORMAT.kdf,
+
+            memory:
+                FORMAT.memory,
+
+            iterations:
+                FORMAT.iterations,
+
+            parallelism:
+                FORMAT.parallelism,
+
+            salt:
+                bytesToBase64(
+                    salt
+                ),
+
+            nonce:
+                bytesToBase64(
+                    nonce
+                ),
+
+            filename:
+                file.name,
+
+            size:
+                file.size,
 
             mime:
                 file.type ||
                 "application/octet-stream"
         };
 
+
         const headerBytes =
             new TextEncoder().encode(
-                JSON.stringify(header)
+                JSON.stringify(
+                    header
+                )
             );
+
+
+        /* AES encryption */
+
+        setProgress(
+            60,
+            "Encrypting file..."
+        );
+
 
         const encrypted =
             await crypto.subtle.encrypt(
                 {
                     name: "AES-GCM",
+
                     iv: nonce,
-                    additionalData: headerBytes,
+
+                    additionalData:
+                        headerBytes,
+
                     tagLength: 128
                 },
+
                 key,
+
                 plaintext
             );
+
+
+        /* Package */
 
         setProgress(
             85,
             "Building SecureDrop package..."
         );
 
+
         const packageBytes =
             createPackage(
                 headerBytes,
-                new Uint8Array(encrypted)
+                new Uint8Array(
+                    encrypted
+                )
             );
+
+
+        /* Filename */
 
         const outputName =
             file.name.replace(
@@ -803,38 +1204,51 @@ async function encryptFiles() {
                 ""
             ) + ".sdrop";
 
+
+        /* Download */
+
         downloadFile(
             packageBytes,
             outputName,
             "application/octet-stream"
         );
 
+
+        /* Complete */
+
         setProgress(
             100,
             "Encryption complete"
         );
 
+
         setStatus(
             "SecureDrop package created"
         );
 
+
     } catch (error) {
+
         console.error(
             "Encryption error:",
             error
         );
+
 
         setProgress(
             0,
             "Encryption failed"
         );
 
+
         setStatus(
             error?.message ||
             "Encryption failed"
         );
 
+
     } finally {
+
         setBusy(false);
     }
 }
@@ -845,12 +1259,18 @@ async function encryptFiles() {
 ========================================================= */
 
 async function decryptFiles() {
+
     if (operationRunning) {
         return;
     }
 
+
     try {
+
+        /* Validate package */
+
         if (selectedFiles.length === 0) {
+
             setStatus(
                 "Choose a .sdrop file first"
             );
@@ -858,110 +1278,184 @@ async function decryptFiles() {
             return;
         }
 
+
+        /* Validate password */
+
         if (!password.value) {
+
             setStatus(
                 "Enter the password"
             );
 
             password.focus();
+
             return;
         }
 
+
+        /* Check Argon2 */
+
         if (!window.argon2) {
+
             throw new Error(
                 "Argon2 failed to load"
             );
         }
 
+
         setBusy(true);
+
 
         setProgress(
             0,
             "Preparing..."
         );
 
+
         await new Promise(
             (resolve) =>
-                requestAnimationFrame(resolve)
+                requestAnimationFrame(
+                    resolve
+                )
         );
+
 
         const packageFile =
             selectedFiles[0];
+
+
+        /* Read package */
 
         setProgress(
             5,
             "Reading SecureDrop package..."
         );
 
+
         const packageBytes =
             new Uint8Array(
                 await packageFile.arrayBuffer()
             );
+
+
+        /* Parse package */
 
         setProgress(
             20,
             "Reading package metadata..."
         );
 
+
         const parsed =
-            parsePackage(packageBytes);
+            parsePackage(
+                packageBytes
+            );
+
+
+        /* Validate magic */
 
         if (
             parsed.header.magic !==
             FORMAT.magic
         ) {
+
             throw new Error(
                 "Invalid SecureDrop package"
             );
         }
 
+
+        /* Validate version */
+
         if (
             parsed.header.version !==
             FORMAT.version
         ) {
+
             throw new Error(
                 "Unsupported SecureDrop version"
             );
         }
 
+
+        /* Validate KDF */
+
         if (
             parsed.header.kdf !==
             FORMAT.kdf
         ) {
+
             throw new Error(
                 "Unsupported key derivation function"
             );
         }
 
+
+        /* Validate cipher */
+
         if (
             parsed.header.cipher !==
             FORMAT.cipher
         ) {
+
             throw new Error(
                 "Unsupported encryption algorithm"
             );
         }
+
+
+        /* Validate metadata */
+
+        if (
+            typeof parsed.header.salt !==
+            "string"
+        ) {
+
+            throw new Error(
+                "Invalid package salt"
+            );
+        }
+
+
+        if (
+            typeof parsed.header.nonce !==
+            "string"
+        ) {
+
+            throw new Error(
+                "Invalid package nonce"
+            );
+        }
+
 
         const salt =
             base64ToBytes(
                 parsed.header.salt
             );
 
+
         const nonce =
             base64ToBytes(
                 parsed.header.nonce
             );
+
+
+        /* Derive key */
 
         setProgress(
             35,
             "Deriving encryption key..."
         );
 
+
         const keyBytes =
             await deriveKey(
                 password.value,
                 salt
             );
+
+
+        /* Import key */
 
         const key =
             await crypto.subtle.importKey(
@@ -974,75 +1468,106 @@ async function decryptFiles() {
                 ["decrypt"]
             );
 
+
+        /* Decrypt */
+
         setProgress(
             65,
             "Decrypting file..."
         );
 
+
         const decrypted =
             await crypto.subtle.decrypt(
                 {
                     name: "AES-GCM",
+
                     iv: nonce,
+
                     additionalData:
                         parsed.headerBytes,
+
                     tagLength: 128
                 },
+
                 key,
+
                 parsed.ciphertext
             );
+
+
+        /* Restore */
 
         setProgress(
             90,
             "Preparing decrypted file..."
         );
 
+
         const filename =
             parsed.header.filename ||
             "decrypted-file";
 
+
         downloadFile(
-            new Uint8Array(decrypted),
+            new Uint8Array(
+                decrypted
+            ),
+
             filename,
+
             parsed.header.mime ||
-                "application/octet-stream"
+            "application/octet-stream"
         );
+
+
+        /* Complete */
 
         setProgress(
             100,
             "Decryption complete"
         );
 
+
         setStatus(
             "File decrypted successfully"
         );
 
+
     } catch (error) {
+
         console.error(
             "Decryption error:",
             error
         );
+
 
         setProgress(
             0,
             "Decryption failed"
         );
 
+
         if (
             error?.name ===
             "OperationError"
         ) {
+
             setStatus(
                 "Wrong password or corrupted package"
             );
+
         } else {
+
             setStatus(
                 error?.message ||
                 "Decryption failed"
             );
         }
 
+
     } finally {
+
         setBusy(false);
     }
 }
@@ -1056,20 +1581,35 @@ async function deriveKey(
     passphrase,
     salt
 ) {
+
     const result =
         await window.argon2.hash({
-            pass: passphrase,
-            salt: salt,
 
-            time: FORMAT.iterations,
-            mem: FORMAT.memory,
-            parallelism: FORMAT.parallelism,
+            pass:
+                passphrase,
 
-            hashLen: 32,
+            salt:
+                salt,
+
+            time:
+                FORMAT.iterations,
+
+            mem:
+                FORMAT.memory,
+
+            parallelism:
+                FORMAT.parallelism,
+
+            hashLen:
+                32,
 
             type:
-                window.argon2.ArgonType.Argon2id
+                window
+                    .argon2
+                    .ArgonType
+                    .Argon2id
         });
+
 
     return result.hash;
 }
@@ -1079,12 +1619,10 @@ async function deriveKey(
    PACKAGE FORMAT
 =========================================================
 
-   Layout:
-
-   4 bytes   magic
-   4 bytes   header length
-   N bytes   JSON header
-   remaining ciphertext
+    4 bytes   magic
+    4 bytes   header length
+    N bytes   JSON header
+    remaining ciphertext
 
 ========================================================= */
 
@@ -1092,24 +1630,42 @@ function createPackage(
     headerBytes,
     ciphertext
 ) {
+
     const magic =
-        new TextEncoder().encode("SDRP");
+        new TextEncoder().encode(
+            "SDRP"
+        );
+
+
+    const totalLength =
+        4 +
+        4 +
+        headerBytes.length +
+        ciphertext.length;
+
 
     const buffer =
         new ArrayBuffer(
-            4 +
-            4 +
-            headerBytes.length +
-            ciphertext.length
+            totalLength
         );
 
+
     const output =
-        new Uint8Array(buffer);
+        new Uint8Array(
+            buffer
+        );
+
 
     const view =
-        new DataView(buffer);
+        new DataView(
+            buffer
+        );
+
 
     let offset = 0;
+
+
+    /* Magic */
 
     output.set(
         magic,
@@ -1117,6 +1673,9 @@ function createPackage(
     );
 
     offset += 4;
+
+
+    /* Header length */
 
     view.setUint32(
         offset,
@@ -1126,6 +1685,9 @@ function createPackage(
 
     offset += 4;
 
+
+    /* Header */
+
     output.set(
         headerBytes,
         offset
@@ -1134,35 +1696,57 @@ function createPackage(
     offset +=
         headerBytes.length;
 
+
+    /* Ciphertext */
+
     output.set(
         ciphertext,
         offset
     );
 
+
     return output;
 }
 
 
+/* =========================================================
+   PACKAGE PARSER
+========================================================= */
+
 function parsePackage(bytes) {
+
     if (bytes.length < 8) {
+
         throw new Error(
             "Invalid SecureDrop package"
         );
     }
 
+
     const decoder =
         new TextDecoder();
 
+
+    /* Magic */
+
     const magic =
         decoder.decode(
-            bytes.slice(0, 4)
+            bytes.slice(
+                0,
+                4
+            )
         );
 
+
     if (magic !== "SDRP") {
+
         throw new Error(
             "Not a SecureDrop package"
         );
     }
+
+
+    /* DataView */
 
     const view =
         new DataView(
@@ -1171,26 +1755,38 @@ function parsePackage(bytes) {
             bytes.byteLength
         );
 
+
     const headerLength =
         view.getUint32(
             4,
             false
         );
 
+
+    /* Validate header */
+
     if (
         headerLength <= 0 ||
         headerLength >
             bytes.length - 8
     ) {
+
         throw new Error(
             "Invalid package header"
         );
     }
 
-    const headerStart = 8;
+
+    const headerStart =
+        8;
+
 
     const headerEnd =
-        headerStart + headerLength;
+        headerStart +
+        headerLength;
+
+
+    /* Header */
 
     const headerBytes =
         bytes.slice(
@@ -1198,26 +1794,44 @@ function parsePackage(bytes) {
             headerEnd
         );
 
-    const ciphertext =
-        bytes.slice(headerEnd);
 
-    const decoderHeader =
-        new TextDecoder();
+    /* Ciphertext */
+
+    const ciphertext =
+        bytes.slice(
+            headerEnd
+        );
+
+
+    if (ciphertext.length === 0) {
+
+        throw new Error(
+            "Package contains no encrypted data"
+        );
+    }
+
+
+    /* Parse JSON */
 
     let header;
 
+
     try {
+
         header =
             JSON.parse(
-                decoderHeader.decode(
+                new TextDecoder().decode(
                     headerBytes
                 )
             );
+
     } catch {
+
         throw new Error(
             "Invalid package metadata"
         );
     }
+
 
     return {
         header,
@@ -1236,6 +1850,7 @@ function downloadFile(
     filename,
     mimeType
 ) {
+
     const blob =
         new Blob(
             [bytes],
@@ -1244,24 +1859,44 @@ function downloadFile(
             }
         );
 
+
     const url =
-        URL.createObjectURL(blob);
+        URL.createObjectURL(
+            blob
+        );
+
 
     const link =
-        document.createElement("a");
+        document.createElement(
+            "a"
+        );
 
-    link.href = url;
-    link.download = filename;
 
-    document.body.appendChild(link);
+    link.href =
+        url;
+
+    link.download =
+        filename;
+
+
+    document.body.appendChild(
+        link
+    );
+
 
     link.click();
 
+
     link.remove();
+
 
     setTimeout(
         () => {
-            URL.revokeObjectURL(url);
+
+            URL.revokeObjectURL(
+                url
+            );
+
         },
         1000
     );
@@ -1273,20 +1908,25 @@ function downloadFile(
 ========================================================= */
 
 function bytesToBase64(bytes) {
+
     let binary = "";
 
-    const chunkSize = 0x8000;
+    const chunkSize =
+        0x8000;
+
 
     for (
         let i = 0;
         i < bytes.length;
         i += chunkSize
     ) {
+
         const chunk =
             bytes.subarray(
                 i,
                 i + chunkSize
             );
+
 
         binary +=
             String.fromCharCode(
@@ -1294,27 +1934,47 @@ function bytesToBase64(bytes) {
             );
     }
 
-    return btoa(binary);
+
+    return btoa(
+        binary
+    );
 }
 
 
 function base64ToBytes(base64) {
-    const binary =
-        atob(base64);
+
+    let binary;
+
+
+    try {
+
+        binary =
+            atob(base64);
+
+    } catch {
+
+        throw new Error(
+            "Invalid package encoding"
+        );
+    }
+
 
     const bytes =
         new Uint8Array(
             binary.length
         );
 
+
     for (
         let i = 0;
         i < binary.length;
         i++
     ) {
+
         bytes[i] =
             binary.charCodeAt(i);
     }
+
 
     return bytes;
 }
@@ -1325,20 +1985,92 @@ function base64ToBytes(base64) {
 ========================================================= */
 
 function setStatus(message) {
-    status.textContent = message;
+
+    status.textContent =
+        message;
 }
 
 
 /* =========================================================
-   STARTUP
+   AMBIENT BACKGROUND PARALLAX
+========================================================= */
+
+if (
+    ambientBackground &&
+    !window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+    ).matches
+) {
+
+    let parallaxFrame = null;
+
+
+    window.addEventListener(
+        "pointermove",
+        (event) => {
+
+            if (
+                parallaxFrame !==
+                null
+            ) {
+                return;
+            }
+
+
+            parallaxFrame =
+                requestAnimationFrame(
+                    () => {
+
+                        const x =
+                            event.clientX -
+                            window.innerWidth / 2;
+
+
+                        const y =
+                            event.clientY -
+                            window.innerHeight / 2;
+
+
+                        ambientBackground.style.setProperty(
+                            "--mouse-x",
+                            `${x}px`
+                        );
+
+
+                        ambientBackground.style.setProperty(
+                            "--mouse-y",
+                            `${y}px`
+                        );
+
+
+                        parallaxFrame =
+                            null;
+                    }
+                );
+        },
+        {
+            passive: true
+        }
+    );
+}
+
+
+/* =========================================================
+   START APPLICATION
 ========================================================= */
 
 /*
- * Important:
- * updateUI() builds the normal interface.
- * resetProgress() then guarantees that the progress
- * section starts hidden instead of showing "Preparing...".
+ * Build the interface first.
  */
 
 updateUI();
+
+
+/*
+ * Critical:
+ * Progress starts completely hidden.
+ * It only becomes visible when
+ * encryption/decryption starts.
+ */
+
 resetProgress();
