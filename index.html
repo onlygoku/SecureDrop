@@ -19,6 +19,7 @@
 
         <div class="brand">
             <h1 class="brand-title">SecureDrop</h1>
+
             <p class="brand-subtitle">
                 Private file encryption.
             </p>
@@ -73,11 +74,17 @@
                     +
                 </div>
 
-                <h2 class="drop-title">
+                <h2
+                    id="dropTitle"
+                    class="drop-title"
+                >
                     Drop files here
                 </h2>
 
-                <p class="drop-subtitle">
+                <p
+                    id="dropSubtitle"
+                    class="drop-subtitle"
+                >
                     or click to choose files from your device
                 </p>
 
@@ -98,7 +105,6 @@
         <input
             id="fileInput"
             type="file"
-            multiple
         >
 
 
@@ -169,7 +175,13 @@
 
 
         <!-- Progress -->
-        <section class="progress-section">
+        <!-- Hidden until an operation actually starts -->
+        <section
+            id="progressSection"
+            class="progress-section"
+            hidden
+            aria-live="polite"
+        >
 
             <div class="progress-track">
 
@@ -183,7 +195,7 @@
             <div class="progress-text">
 
                 <span id="status">
-                    Preparing...
+                    Ready
                 </span>
 
                 <span id="progressPercent">
@@ -228,14 +240,15 @@
 
     </main>
 
-
-    
-
 </div>
 
 
 <script src="https://cdn.jsdelivr.net/npm/argon2-browser@1.18.0/dist/argon2-bundled.min.js"></script>
-<script type="module" src="app.js"></script>
+
+<script
+    type="module"
+    src="app.js"
+></script>
 
 </body>
 </html>
